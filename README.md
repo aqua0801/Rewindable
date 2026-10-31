@@ -1,12 +1,35 @@
 # Rewindable
 
-確定性 rollback 遊戲狀態的編譯期產生器：標一個 attribute，自動得到 **Snapshot / Restore / Checksum / 逐欄位 Diff**，並在編譯期擋掉會造成 desync 的欄位型別。
+A C# source generator for deterministic rollback game state. Mark a struct with one attribute and get
+**snapshot / restore / checksum / field-level diff** generated at compile time, while field types that would cause
+a desync (floats, references, ...) are rejected by the compiler.
 
-## 為什麼
+Works in plain .NET and in Unity (C# 9, netstandard2.1, Unity 2022.3+).
 
-手寫 rollback 時，每加一個狀態欄位都要同步改四個地方（存、讀、hash、diff），漏一處就是只在連線對戰才出現的 desync。Rewindable 讓這四件事都從同一份 struct 定義產生。
+## Why
 
-## 用法
+With hand-written rollback, every new state field has to be added in four places: save, load, hash and diff.
+Miss one and you get a desync that only shows up in online matches. Rewindable generates all four from the struct
+definition itself, so they cannot drift apart.
+
+## Install
+
+**.NET** (runtime + generator in one package; *not published yet*):
+
+```
+dotnet add package Rewindable
+```
+
+**Unity** (`Packages/manifest.json`):
+
+```json
+"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.3.0"
+```
+
+Then add `Rewindable` to the `references` of every asmdef that declares or uses `[RollbackState]` types. See
+[Unity](#unity) for details.
+
+## Quick start
 
 ```csharp
 using Rewindable;
@@ -23,7 +46,7 @@ public partial struct Fighter
     public int Hp;
     public ActionId Action;
     public byte Frame;
-    [NoRollback] public int DebugCounter;   // 不進 snapshot / checksum / diff
+    [NoRollback] public int DebugCounter;   // excluded from snapshot, checksum and diff
 }
 
 [RollbackState]
@@ -36,34 +59,40 @@ public partial struct MatchState
 ```
 
 ```csharp
-var ring = new SnapshotRing<MatchState>(capacity: 16);   // 預先配置，Save/Load 零 GC
-ulong checksum = ring.Save(frame, in state);             // 存檔並回傳 FNV-1a 64 checksum
-ring.TryLoad(rollbackFrame, ref state);                  // rollback
+var ring = new SnapshotRing<MatchState>(capacity: 16);   // preallocated: Save/TryLoad never allocate
+ulong checksum = ring.Save(frame, in state);             // stores the frame, returns its FNV-1a 64 checksum
+ring.TryLoad(rollbackFrame, ref state);                  // roll back
 
-foreach (var d in RollbackSnapshot.Diff(in mine, in theirs))
+foreach (FieldDiff d in RollbackSnapshot.Diff(in mine, in theirs))
     Console.WriteLine(d);                                // P2.X: 3 (raw 196608) != 3.000015259 (raw 196609)
 ```
 
-## 規則（編譯期診斷）
+Every `[RollbackState]` struct gets `WriteTo`, `ReadFrom`, `DiffAgainst`, `DescribeLayout`, `SnapshotSize` and a
+`const int RollbackSnapshotSize`. `RollbackSnapshot` offers `Capture`, `Restore`, `Checksum` and `Diff` on top.
 
-| ID | 等級 | 內容 |
+## Diagnostics
+
+Fields are checked at compile time:
+
+| ID | Severity | Rule |
 |---|---|---|
-| RWD001 | Error | `float` / `double` / `decimal` 欄位 |
-| RWD002 | Error | 參考型別欄位（`string`、陣列、class、event） |
-| RWD003 | Error | 巢狀 struct 沒標 `[RollbackState]` |
-| RWD004 | Warning | 欄位分散在多個 partial 宣告（順序依檔名＋位置） |
-| RWD005 | Error | auto-property（改用欄位，或 `[field: NoRollback]`） |
-| RWD006 | Error | `readonly` 欄位或 `readonly struct` |
-| RWD007 | Error | `[FixedPoint]` 必須剛好一個 short/int/long 欄位 |
-| RWD008 | Error | struct 或其外層型別不是 `partial` |
-| RWD009 | Error | 尚未支援：泛型、ref struct、fixed buffer、指標、nint |
-| RWD010 | Error | `[RollbackValue]` 的 raw 成員或 factory 不存在、型別不符或無法存取 |
+| RWD001 | Error | `float` / `double` / `decimal` field |
+| RWD002 | Error | Reference-type field (`string`, arrays, classes, events) |
+| RWD003 | Error | Struct field whose type is not `[RollbackState]` |
+| RWD004 | Warning | Fields spread over several partial declarations (order then follows file path, then position) |
+| RWD005 | Error | Auto-property (use a field, or `[field: NoRollback]`) |
+| RWD006 | Error | `readonly` field or `readonly struct` |
+| RWD007 | Error | `[FixedPoint]` needs exactly one `short` / `int` / `long` field |
+| RWD008 | Error | The struct or one of its containing types is not `partial` |
+| RWD009 | Error | Not supported yet: generic types, ref structs, fixed buffers, pointers, `nint` |
+| RWD010 | Error | `[RollbackValue]` raw member or factory missing, of the wrong type, or not accessible |
 
-`[NoRollback]` 的欄位不受上述限制。`static` / `const` 欄位一律忽略。
+Fields marked `[NoRollback]` are exempt. `static` and `const` fields are always ignored.
 
-## 不可變的值型別：`[RollbackValue]`
+## Immutable value types: `[RollbackValue]`
 
-已經設計成 `readonly struct` 的型別（例如定點數、打包好的輸入）不用為了 rollback 改成可變的，只要指定 raw 成員和還原用的 factory：
+Types already designed as `readonly struct` (fixed-point numbers, packed inputs, ...) do not have to become mutable.
+Name the member that holds the raw value and the factory that rebuilds it:
 
 ```csharp
 [RollbackValue(nameof(RawValue), nameof(FromRaw)), FixedPoint(16)]
@@ -74,27 +103,32 @@ public readonly struct Fixed
 }
 ```
 
-Snapshot 只存 raw，還原時呼叫 `FromRaw(raw)`，所以必須滿足 `FromRaw(x.RawValue) == x`。加上 `[FixedPoint]` 後，diff 會顯示小數。
+The snapshot stores only the raw value and restore calls `FromRaw(raw)`, so `FromRaw(x.RawValue)` must equal `x`.
+With `[FixedPoint]`, diffs show the value as a decimal.
 
-## Snapshot 格式
+## Snapshot format
 
-- 依宣告順序、little-endian，跨平台位元組一致。
-- `bool` 1 byte、`char` 2 bytes、enum 依底層型別。
-- 每個型別有 `public const int RollbackSnapshotSize`，巢狀型別在編譯期加總。
+- Fields in declaration order, little-endian: identical bytes on every platform.
+- `bool` is 1 byte, `char` 2 bytes, enums use their underlying type.
+- Each type exposes `public const int RollbackSnapshotSize`; nested types are summed at compile time.
 
-## 線上 desync 診斷
+## Diagnosing online desyncs
 
-Peer 之間通常只交換 hash，對不上時只知道「某一幀壞了」。`DesyncRecorder<T>` 會在預先配置好的 buffer 裡保留最近 N 個已確認的幀（snapshot、遊戲自己的 checksum、產生該幀的輸入），每幀記錄不配置記憶體。偵測到 desync 時，呼叫 `CreateDump` 存成 `.rwdump`：
+Peers usually exchange only hashes, so a mismatch tells you *that* a frame went wrong, not *what*.
+`DesyncRecorder<T>` keeps the last N confirmed frames (snapshot, the game's own checksum, the inputs that produced
+the frame) in preallocated buffers, without allocating per frame. When a desync is detected, write them out as a
+`.rwdump` file:
 
 ```csharp
 var recorder = new DesyncRecorder<GameState>(capacity: 240, inputBytesPerFrame: 4);
-recorder.Record(frame, in state, state.Hash(), inputsThatProducedThisFrame);   // 每個已確認的幀
+recorder.Record(frame, in state, state.Hash(), inputsThatProducedThisFrame);   // every confirmed frame
 
-// hash 對不上時
+// when the hashes disagree
 recorder.CreateDump("P2", desyncFrame).Save("p2.rwdump");
 ```
 
-`.rwdump` 會把 layout 一起存進去（每個欄位的路徑、型別、enum 名稱、定點數格式），所以比對時不需要遊戲本身的 dll：
+A dump carries its own layout (every field's path, type, enum names and fixed-point format), so comparing two dumps
+needs neither the game nor its assemblies:
 
 ```
 > rewindable diff p1.rwdump p2.rwdump --follow 5
@@ -105,49 +139,61 @@ first divergent state: frame 101
 frame 102: 1 field(s) differ
 ```
 
-判斷出的原因（`DivergenceCause`）：`Step`（同樣的前一幀和輸入，結果卻不同）、`Inputs`（輸入不同）、`ChecksumOnly`（所有欄位都一致，只有 hash 不同，代表 hash 讀到 snapshot 以外的資料）、`BeforeWindow`（分歧點早於錄製範圍）。
+`DumpComparison` classifies the divergence (`DivergenceCause`):
 
-`rewindable show x.rwdump --frame 101` 會印出某一幀的所有欄位。CLI 在 `tools/Rewindable.Cli`，可以用 `dotnet pack` 打包成 dotnet tool。
+| Cause | Meaning |
+|---|---|
+| `Step` | Same previous state and same inputs, different result: the simulation step is not deterministic. |
+| `Inputs` | Same previous state, different inputs into the divergent frame: an input / netcode problem. |
+| `ChecksumOnly` | Every rollback field matches but the checksums differ: the hash reads data outside the snapshot. |
+| `BeforeWindow` | Already different at the oldest common frame: the cause is older than the recorded window. |
 
-## Unity（UPM 套件）
+`rewindable show x.rwdump --frame 101` prints every field of one frame. The CLI lives in `tools/Rewindable.Cli`
+and packs as a .NET tool (`dotnet pack`, command name `rewindable`). Exit codes: 0 no divergence, 1 diverged, 2 error.
 
-在 `Packages/manifest.json` 加上：
+## Unity
 
-```json
-"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.3.0"
-```
+The package lives in `unity/com.aqua0801.rewindable` and is installed by git URL (see [Install](#install)).
 
-接著在每個宣告或使用 `[RollbackState]` 型別的 asmdef 的 `references` 加上 `Rewindable`。Generator（`Runtime/Analyzers`）會對 `Rewindable` 組件本身，以及所有引用它的組件執行。
+- Add `Rewindable` to the `references` of every asmdef that declares or uses `[RollbackState]` types. The source
+  generator (`Runtime/Analyzers/Rewindable.Generator.dll`, label `RoslynAnalyzer`) runs for the `Rewindable`
+  assembly and every assembly that references it.
+- **Window > Rewindable > Desync Dump Diff** compares two `.rwdump` files (or the two newest ones in
+  `persistentDataPath/desync`): the report, then every field of any common frame side by side, differences in red.
 
-**Window > Rewindable > Desync Dump Diff**：可以選兩個 `.rwdump`（或直接取 `persistentDataPath/desync` 裡最新的兩個），顯示比對報告，並逐幀並排列出每個欄位，有差異的會標成紅色。
-
-- Runtime 的原始碼只有一份，放在 `unity/com.aqua0801.rewindable/Runtime`，以 C# 9 撰寫。`src/Rewindable` 這個 .NET 專案直接編譯那些檔案。
-- Generator target netstandard2.0、Roslyn 4.3.1（Unity 2022.3+）。用 `dotnet build -c Release` 建置時，會自動把 dll 複製到套件的 `Runtime/Analyzers/`，記得一起 commit。
-- 套件裡新增檔案後，要執行 `python scripts/unity_meta.py` 補上 `.meta`。GUID 由路徑決定，重跑也不會改變。`PackageTests` 會檢查有沒有漏掉。
-
-### 發佈新版本
-
-1. 同時修改 `Directory.Build.props` 的 `<Version>` 和 `package.json` 的 `version`（測試會檢查兩者一致）。
-2. 執行 `dotnet build -c Release` 並 commit，包含更新後的 analyzer dll。
-3. 打 tag `vX.Y.Z` 並 push，再把專案 manifest 裡的 `#vX.Y.Z` 改成新版本。
-
-## 專案結構
+## Development
 
 ```
-unity/com.aqua0801.rewindable   UPM 套件：Runtime（唯一的一份原始碼）、Analyzers、Editor 視窗
-src/Rewindable                  編譯套件 Runtime 的 .NET 專案（NuGet / 測試用）
-src/Rewindable.Generator        incremental source generator（ForAttributeWithMetadataName）
-tools/Rewindable.Cli            `rewindable` CLI（diff / show .rwdump）
-tests/Rewindable.Tests              行為測試（以 analyzer 方式使用 generator）+ 套件守門測試
-tests/Rewindable.Generator.Tests    診斷規則與 C# 9 編譯相容性測試
-scripts/unity_meta.py           補上缺少的 .meta
+unity/com.aqua0801.rewindable   Unity package: Runtime (the only copy of the runtime sources), Analyzers, Editor window
+src/Rewindable                  .NET project that compiles the package's Runtime folder (NuGet, tests)
+src/Rewindable.Generator        Incremental source generator (Roslyn 4.3.1, ForAttributeWithMetadataName)
+tools/Rewindable.Cli            `rewindable` CLI (diff / show .rwdump)
+tests/Rewindable.Tests              Behaviour tests (generator consumed as an analyzer) + package checks
+tests/Rewindable.Generator.Tests    Diagnostics and C# 9 compatibility of the generated code
+scripts/unity_meta.py           Creates missing Unity .meta files
 ```
+
+- The runtime is written in C# 9 for Unity; `src/Rewindable` compiles the package's `Runtime` folder rather than a
+  copy of it.
+- `dotnet build -c Release` copies the generator into `Runtime/Analyzers/`. Commit that DLL.
+- After adding files to the package, run `python scripts/unity_meta.py`: git-installed packages are immutable, so
+  every file needs a `.meta`. GUIDs are derived from the path, so re-running never changes them. `PackageTests`
+  fails if one is missing.
+
+### Releasing
+
+1. Bump `<Version>` in `Directory.Build.props` and `version` in `unity/com.aqua0801.rewindable/package.json`
+   (a test checks they match), and add a `CHANGELOG.md` entry.
+2. `dotnet build -c Release`, then commit, including the refreshed analyzer DLL.
+3. Tag `vX.Y.Z`, push the tag, and update `#vX.Y.Z` in the consuming projects' `manifest.json`.
 
 ## Roadmap
 
-- [ ] 固定容量陣列欄位（`FixedArray8<T>` 之類）
-- [x] `DesyncRecorder` 與 `.rwdump`
-- [x] Dump 比對 CLI
-- [x] Dump 比對 Unity EditorWindow
-- [ ] Light / full 兩層 hash（`[HashTier]`）
-- [x] UPM 套件（git URL）
+- [x] `[RollbackState]` generator with compile-time diagnostics
+- [x] `[RollbackValue]` for immutable value types
+- [x] `DesyncRecorder` and `.rwdump` dumps
+- [x] `rewindable` CLI
+- [x] Unity package (git URL) and Desync Dump Diff window
+- [ ] Fixed-capacity array fields (`FixedArray8<T>` and similar)
+- [ ] Light / full hash tiers (`[HashTier]`)
+- [ ] NuGet release

@@ -10,6 +10,18 @@
     <UnityPackageDir>$(MSBuildThisFileDirectory)unity\com.aqua0801.rewindable\</UnityPackageDir>
   </PropertyGroup>
 
+  <!-- NuGet metadata shared by the packable projects (Rewindable, Rewindable.Cli). -->
+  <PropertyGroup>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/aqua0801/Rewindable</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/aqua0801/Rewindable</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
   <!-- Library projects: ship XML docs for IntelliSense (missing-doc warnings suppressed). -->
   <PropertyGroup Condition="'$(MSBuildProjectName.EndsWith(`.Tests`))' != 'true'">
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
