@@ -57,8 +57,24 @@ foreach (var d in RollbackSnapshot.Diff(in mine, in theirs))
 | RWD007 | Error | `[FixedPoint]` 必須剛好一個 short/int/long 欄位 |
 | RWD008 | Error | struct 或其外層型別不是 `partial` |
 | RWD009 | Error | 尚未支援：泛型、ref struct、fixed buffer、指標、nint |
+| RWD010 | Error | `[RollbackValue]` 的 raw 成員或 factory 不存在、型別不符或無法存取 |
 
 `[NoRollback]` 的欄位不受上述限制。`static` / `const` 欄位一律忽略。
+
+## 不可變的值型別：`[RollbackValue]`
+
+已經設計成 `readonly struct` 的型別（例如定點數、打包好的輸入）不用為了 rollback 改成可變的，只要指定 raw 成員和還原用的 factory：
+
+```csharp
+[RollbackValue(nameof(RawValue), nameof(FromRaw)), FixedPoint(16)]
+public readonly struct Fixed
+{
+    public int RawValue { get; }
+    public static Fixed FromRaw(int raw) => ...;
+}
+```
+
+Snapshot 只存 raw，還原時呼叫 `FromRaw(raw)`，所以必須滿足 `FromRaw(x.RawValue) == x`。加上 `[FixedPoint]` 後，diff 會顯示小數。
 
 ## Snapshot 格式
 

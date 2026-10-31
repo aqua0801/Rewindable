@@ -12,14 +12,28 @@ internal enum FieldKind
     Primitive,
     Enum,
     Nested,
+    /// <summary>Immutable wrapper declared with [RollbackValue].</summary>
+    Value,
 }
 
 /// <param name="Name">Field name as written (no '@').</param>
 /// <param name="Suffix">Writer/reader method suffix, e.g. "Int32".</param>
-/// <param name="Keyword">C# keyword of the primitive / enum underlying type, e.g. "int".</param>
+/// <param name="Keyword">C# keyword of the primitive / enum underlying / raw type, e.g. "int".</param>
 /// <param name="TypeName">Fully qualified field type.</param>
-/// <param name="Size">Byte size for primitives and enums; 0 for nested.</param>
-internal sealed record FieldModel(string Name, FieldKind Kind, string Suffix, string Keyword, string TypeName, int Size);
+/// <param name="Size">Byte size for primitives, enums and values; 0 for nested.</param>
+/// <param name="RawMember">[RollbackValue] raw member name (escaped), else empty.</param>
+/// <param name="Factory">[RollbackValue] factory method name (escaped), else empty.</param>
+/// <param name="FixedPointBits">Fractional bits for a [FixedPoint] value, else -1.</param>
+internal sealed record FieldModel(
+    string Name,
+    FieldKind Kind,
+    string Suffix,
+    string Keyword,
+    string TypeName,
+    int Size,
+    string RawMember = "",
+    string Factory = "",
+    int FixedPointBits = -1);
 
 internal sealed record ContainingTypeModel(string Keyword, string Name);
 

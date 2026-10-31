@@ -13,6 +13,7 @@ internal static class ModelBuilder
     public const string RollbackStateAttribute = "Rewindable.RollbackStateAttribute";
     private const string NoRollbackAttribute = "Rewindable.NoRollbackAttribute";
     private const string FixedPointAttribute = "Rewindable.FixedPointAttribute";
+    private const string RollbackValueAttribute = "Rewindable.RollbackValueAttribute";
 
     public static GenerationResult Build(GeneratorAttributeSyntaxContext context, CancellationToken ct)
     {
@@ -95,7 +96,7 @@ internal static class ModelBuilder
                 continue;
             }
 
-            FieldModel? model = Classify(field, location, Report);
+            FieldModel? model = Classify(field, location, symbol, context.SemanticModel.Compilation, Report);
             if (model is not null)
                 fields.Add(model);
         }
@@ -137,10 +138,22 @@ internal static class ModelBuilder
         return new GenerationResult(model2, new EquatableArray<DiagnosticInfo>(diagnostics.ToArray()));
     }
 
-    private static FieldModel? Classify(IFieldSymbol field, Location? location, Action<DiagnosticDescriptor, Location?, string[]> report)
+    private static FieldModel? Classify(
+        IFieldSymbol field,
+        Location? location,
+        INamedTypeSymbol owner,
+        Compilation compilation,
+        Action<DiagnosticDescriptor, Location?, string[]> report)
     {
         ITypeSymbol type = field.Type;
         string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        if (type.TypeKind == TypeKind.Struct
+            && type is INamedTypeSymbol named
+            && FindAttribute(named.OriginalDefinition, RollbackValueAttribute) is { } valueAttribute)
+        {
+            return ClassifyValue(field, location, named, valueAttribute, owner, compilation, report);
+        }
 
         if (TryPrimitive(type.SpecialType, out var primitive))
             return new FieldModel(field.Name, FieldKind.Primitive, primitive.Suffix, primitive.Keyword, typeName, primitive.Size);
@@ -189,6 +202,94 @@ internal static class ModelBuilder
         report(Diagnostics.Unsupported, location, new[] { field.Name, type.TypeKind + " fields" });
         return null;
     }
+
+    private static FieldModel? ClassifyValue(
+        IFieldSymbol field,
+        Location? location,
+        INamedTypeSymbol valueType,
+        AttributeData attribute,
+        INamedTypeSymbol owner,
+        Compilation compilation,
+        Action<DiagnosticDescriptor, Location?, string[]> report)
+    {
+        string display = valueType.ToDisplayString();
+
+        FieldModel? Bad(string reason)
+        {
+            report(Diagnostics.InvalidRollbackValue, location, new[] { display, field.Name, reason });
+            return null;
+        }
+
+        if (attribute.ConstructorArguments.Length != 2
+            || attribute.ConstructorArguments[0].Value is not string rawName
+            || attribute.ConstructorArguments[1].Value is not string factoryName)
+        {
+            return Bad("expected (rawMember, factoryMethod)");
+        }
+
+        ITypeSymbol? rawType = null;
+        ISymbol? rawAccessor = null;
+        foreach (ISymbol member in valueType.GetMembers(rawName))
+        {
+            if (member is IFieldSymbol { IsStatic: false } rawField)
+            {
+                rawType = rawField.Type;
+                rawAccessor = rawField;
+                break;
+            }
+            if (member is IPropertySymbol { IsStatic: false, IsIndexer: false, GetMethod: { } getter } rawProperty)
+            {
+                rawType = rawProperty.Type;
+                rawAccessor = getter;
+                break;
+            }
+        }
+
+        if (rawType is null || rawAccessor is null)
+            return Bad("no instance field or readable property named '" + rawName + "'");
+        if (!compilation.IsSymbolAccessibleWithin(rawAccessor, owner))
+            return Bad("'" + rawName + "' is not accessible from '" + owner.ToDisplayString() + "'");
+        if (!TryPrimitive(rawType.SpecialType, out var primitive))
+            return Bad("'" + rawName + "' must be an integer, bool or char, not '" + rawType.ToDisplayString() + "'");
+
+        IMethodSymbol? factory = valueType.GetMembers(factoryName)
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.IsStatic
+                && !m.IsGenericMethod
+                && m.Parameters.Length == 1
+                && m.Parameters[0].RefKind == RefKind.None
+                && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, rawType)
+                && SymbolEqualityComparer.Default.Equals(m.ReturnType, valueType));
+
+        if (factory is null)
+            return Bad("no static method '" + factoryName + "(" + primitive.Keyword + ")' returning '" + valueType.Name + "'");
+        if (!compilation.IsSymbolAccessibleWithin(factory, owner))
+            return Bad("'" + factoryName + "' is not accessible from '" + owner.ToDisplayString() + "'");
+
+        int fixedPointBits = -1;
+        if (FindAttribute(valueType.OriginalDefinition, FixedPointAttribute) is { } fixedPoint
+            && fixedPoint.ConstructorArguments.Length == 1
+            && fixedPoint.ConstructorArguments[0].Value is int bits
+            && bits is >= 0 and <= 62
+            && primitive.Suffix is "Int16" or "Int32" or "Int64")
+        {
+            fixedPointBits = bits;
+        }
+
+        return new FieldModel(
+            field.Name,
+            FieldKind.Value,
+            primitive.Suffix,
+            primitive.Keyword,
+            valueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            primitive.Size,
+            Escape(rawName),
+            Escape(factoryName),
+            fixedPointBits);
+    }
+
+    private static AttributeData? FindAttribute(ISymbol symbol, string fullName) =>
+        symbol.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == fullName);
 
     private static bool TryPrimitive(SpecialType specialType, out (string Suffix, string Keyword, int Size) primitive)
     {

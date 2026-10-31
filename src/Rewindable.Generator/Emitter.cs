@@ -62,6 +62,7 @@ internal static class Emitter
             {
                 FieldKind.Primitive => "writer.Write" + f.Suffix + "(" + id + ");",
                 FieldKind.Enum => "writer.Write" + f.Suffix + "((" + f.Keyword + ")" + id + ");",
+                FieldKind.Value => "writer.Write" + f.Suffix + "(" + id + "." + f.RawMember + ");",
                 _ => id + ".WriteTo(ref writer);",
             });
         }
@@ -78,6 +79,7 @@ internal static class Emitter
             {
                 FieldKind.Primitive => id + " = reader.Read" + f.Suffix + "();",
                 FieldKind.Enum => id + " = (" + f.TypeName + ")reader.Read" + f.Suffix + "();",
+                FieldKind.Value => id + " = " + f.TypeName + "." + f.Factory + "(reader.Read" + f.Suffix + "());",
                 _ => id + ".ReadFrom(ref reader);",
             });
         }
@@ -115,6 +117,17 @@ internal static class Emitter
                     w.Line("if (this." + name + " != other." + name + ")");
                     w.Line("    sink.Report(" + path + ", this." + name + ".ToString(), other." + name + ".ToString());");
                     break;
+                case FieldKind.Value:
+                {
+                    string left = "this." + name + "." + f.RawMember;
+                    string right = "other." + name + "." + f.RawMember;
+                    string bits = f.FixedPointBits.ToString(CultureInfo.InvariantCulture);
+                    string format = f.FixedPointBits >= 0 ? Fmt + "FixedPoint({0}, " + bits + ")" : Fmt + "Of({0})";
+                    w.Line("if (" + left + " != " + right + ")");
+                    w.Line("    sink.Report(" + path + ", " + string.Format(CultureInfo.InvariantCulture, format, left) + ", "
+                        + string.Format(CultureInfo.InvariantCulture, format, right) + ");");
+                    break;
+                }
                 default:
                     w.Line("this." + name + ".DiffAgainst(in other." + name + ", " + path + ", sink);");
                     break;
