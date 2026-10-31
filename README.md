@@ -187,6 +187,11 @@ scripts/unity_meta.py           Creates missing Unity .meta files
 2. `dotnet build -c Release`, then commit, including the refreshed analyzer DLL.
 3. Tag `vX.Y.Z`, push the tag, and update `#vX.Y.Z` in the consuming projects' `manifest.json`.
 
+## Contributors
+
+- [Aqua0801](https://github.com/aqua0801) — author and maintainer
+- Claude (Anthropic) — design and implementation
+
 ## Roadmap
 
 - [x] `[RollbackState]` generator with compile-time diagnostics
@@ -197,3 +202,7 @@ scripts/unity_meta.py           Creates missing Unity .meta files
 - [ ] Fixed-capacity array fields (`FixedArray8<T>` and similar)
 - [ ] Light / full hash tiers (`[HashTier]`)
 - [ ] NuGet release
+
+## License
+
+[MIT](LICENSE)
