@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <!-- xUnit v3 on Microsoft.Testing.Platform (opted in via global.json) -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <!-- code coverage: see README -->
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Rewindable\Rewindable.csproj" />
+    <!-- Consume the generator exactly like a package user would. -->
+    <ProjectReference Include="..\..\src\Rewindable.Generator\Rewindable.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

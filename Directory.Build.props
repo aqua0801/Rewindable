@@ -1,0 +1,22 @@
+<Project>
+
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Authors>Aqua0801</Authors>
+  </PropertyGroup>
+
+  <!-- Library projects: ship XML docs for IntelliSense (missing-doc warnings suppressed). -->
+  <PropertyGroup Condition="'$(MSBuildProjectName.EndsWith(`.Tests`))' != 'true'">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Any project whose name ends with ".Tests" is a test project. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName.EndsWith(`.Tests`))' == 'true'">
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Rewindable/Rewindable.csproj" />
+    <Project Path="src/Rewindable.Generator/Rewindable.Generator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Rewindable.Tests/Rewindable.Tests.csproj" />
+    <Project Path="tests/Rewindable.Generator.Tests/Rewindable.Generator.Tests.csproj" />
+  </Folder>
+</Solution>

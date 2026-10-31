@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <!-- xUnit v3 on Microsoft.Testing.Platform (opted in via global.json) -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Rewindable\Rewindable.csproj" />
+    <ProjectReference Include="..\..\src\Rewindable.Generator\Rewindable.Generator.csproj" />
+  </ItemGroup>
+
+</Project>

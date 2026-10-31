@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.1;net10.0</TargetFrameworks>
+    <!-- Runtime sources stay C# 9 so they can be dropped into Unity as-is. -->
+    <LangVersion>9.0</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Description>Compile-time generated snapshot / restore / checksum / diff for deterministic rollback game state.</Description>
+    <PackageTags>rollback;netcode;determinism;source-generator;gamedev;unity</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+  </ItemGroup>
+
+  <!-- Ship the source generator inside this package (analyzers/dotnet/cs). -->
+  <ItemGroup>
+    <ProjectReference Include="..\Rewindable.Generator\Rewindable.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <None Include="..\Rewindable.Generator\bin\$(Configuration)\netstandard2.0\Rewindable.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+</Project>
