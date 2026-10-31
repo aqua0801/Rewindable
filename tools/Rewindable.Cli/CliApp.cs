@@ -54,7 +54,7 @@ internal static class CliApp
         output.Write(comparison.ToReport());
 
         if (follow > 0 && comparison.FirstStateDivergence >= 0)
-            FollowDivergence(left, right, comparison.FirstStateDivergence, follow, output);
+            FollowDivergence(left, right, comparison, follow, output);
 
         return comparison.Cause switch
         {
@@ -65,9 +65,10 @@ internal static class CliApp
     }
 
     /// <summary>How the divergence spreads over the next frames: which fields join in.</summary>
-    private static void FollowDivergence(DesyncDump left, DesyncDump right, int from, int count, TextWriter output)
+    private static void FollowDivergence(DesyncDump left, DesyncDump right, DumpComparison comparison, int count, TextWriter output)
     {
-        var seen = new HashSet<string>();
+        int from = comparison.FirstStateDivergence;
+        var seen = new HashSet<string>(comparison.StateDiffs.Select(d => d.Path));
         int shown = 0;
         foreach (DumpFrame l in left.Frames)
         {

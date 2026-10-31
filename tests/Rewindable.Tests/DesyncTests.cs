@@ -295,6 +295,7 @@ public class CliTests : IDisposable
         Assert.Contains("first divergent state: frame 12", text);
         Assert.Contains("P2.Hp: 850 | 851", text);
         Assert.Contains("frame 13: 1 field(s) differ", text);
+        Assert.DoesNotContain("new: P2.Hp", text);   // already reported at frame 12
     }
 
     [Fact]
