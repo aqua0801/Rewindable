@@ -27,6 +27,10 @@ internal enum FieldKind
 /// <param name="DisplayType">Type name shown in layouts (keyword for primitives, e.g. "Game.ActionId" otherwise).</param>
 /// <param name="EnumValues">Enum member values (as long), parallel to <paramref name="EnumNames"/>.</param>
 /// <param name="EnumNames">Enum member names.</param>
+/// <param name="ArrayLength">
+/// 0 for a plain field; otherwise the field is a [RollbackArray] of this many elements and every other member
+/// describes one element.
+/// </param>
 internal sealed record FieldModel(
     string Name,
     FieldKind Kind,
@@ -39,7 +43,8 @@ internal sealed record FieldModel(
     int FixedPointBits = -1,
     string DisplayType = "",
     EquatableArray<long> EnumValues = default,
-    EquatableArray<string> EnumNames = default);
+    EquatableArray<string> EnumNames = default,
+    int ArrayLength = 0);
 
 internal sealed record ContainingTypeModel(string Keyword, string Name);
 

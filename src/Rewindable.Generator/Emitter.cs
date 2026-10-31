@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -9,6 +10,7 @@ internal static class Emitter
 {
     private const string Ns = "global::Rewindable.";
     private const string Fmt = Ns + "RollbackFormat.";
+    private const string Kind = Ns + "LeafKind.";
 
     public static string Emit(TypeModel m)
     {
@@ -39,50 +41,37 @@ internal static class Emitter
         return w.ToString();
     }
 
-    private static void EmitLayout(CodeWriter w, TypeModel m)
-    {
-        const string Kind = Ns + "LeafKind.";
-        w.Open("public void DescribeLayout(" + Ns + "SnapshotLayoutBuilder builder, string path)");
+    /// <summary>
+    /// Where one value of a field lives: the field itself, or element <c>i</c> of a fixed array inside a loop.
+    /// <paramref name="self"/> / <paramref name="other"/> are expressions, <paramref name="path"/> the diff path.
+    /// </summary>
+    private delegate void SlotBody(string self, string other, string path, bool isElement);
 
-        if (m.FixedPointBits >= 0)
+    private static void ForEachSlot(CodeWriter w, FieldModel f, SlotBody body)
+    {
+        string name = ModelBuilder.Escape(f.Name);
+        string path = Fmt + "Join(path, \"" + f.Name + "\")";
+        if (f.ArrayLength == 0)
         {
-            FieldModel raw = m.Fields[0];
-            w.Line("builder.Add(path, " + Kind + raw.Suffix + ", \"" + m.DisplayName + "\", "
-                + m.FixedPointBits.ToString(CultureInfo.InvariantCulture) + ");");
-            w.Close();
+            body("this." + name, "other." + name, path, isElement: false);
             return;
         }
 
-        foreach (FieldModel f in m.Fields)
-        {
-            string path = Fmt + "Join(path, \"" + f.Name + "\")";
-            switch (f.Kind)
-            {
-                case FieldKind.Primitive:
-                case FieldKind.Value:
-                    w.Line("builder.Add(" + path + ", " + Kind + f.Suffix + ", \"" + f.DisplayType + "\", "
-                        + f.FixedPointBits.ToString(CultureInfo.InvariantCulture) + ");");
-                    break;
-                case FieldKind.Enum:
-                    string values = string.Join(", ", f.EnumValues.Select(v => v.ToString(CultureInfo.InvariantCulture) + "L"));
-                    string names = string.Join(", ", f.EnumNames.Select(n => "\"" + n + "\""));
-                    w.Line("builder.AddEnum(" + path + ", " + Kind + f.Suffix + ", \"" + f.DisplayType + "\", "
-                        + "new long[] { " + values + " }, new string[] { " + names + " });");
-                    break;
-                default:
-                    w.Line("this." + ModelBuilder.Escape(f.Name) + ".DescribeLayout(builder, " + path + ");");
-                    break;
-            }
-        }
+        w.Open("for (int i = 0; i < " + f.ArrayLength.ToString(CultureInfo.InvariantCulture) + "; i++)");
+        body("this." + name + "[i]", "other." + name + "[i]", Fmt + "Index(" + path + ", i)", isElement: true);
         w.Close();
     }
 
     private static void EmitSize(CodeWriter w, TypeModel m)
     {
         var terms = m.Fields
-            .Select(f => f.Kind == FieldKind.Nested
-                ? f.TypeName + ".RollbackSnapshotSize"
-                : f.Size.ToString(CultureInfo.InvariantCulture))
+            .Select(f =>
+            {
+                string one = f.Kind == FieldKind.Nested
+                    ? f.TypeName + ".RollbackSnapshotSize"
+                    : f.Size.ToString(CultureInfo.InvariantCulture);
+                return f.ArrayLength == 0 ? one : f.ArrayLength.ToString(CultureInfo.InvariantCulture) + " * " + one;
+            })
             .ToList();
 
         w.Line("/// <summary>Bytes one snapshot of this state occupies.</summary>");
@@ -97,14 +86,13 @@ internal static class Emitter
         w.Open("public void WriteTo(ref " + Ns + "SnapshotWriter writer)");
         foreach (FieldModel f in m.Fields)
         {
-            string id = "this." + ModelBuilder.Escape(f.Name);
-            w.Line(f.Kind switch
+            ForEachSlot(w, f, (self, _, _, _) => w.Line(f.Kind switch
             {
-                FieldKind.Primitive => "writer.Write" + f.Suffix + "(" + id + ");",
-                FieldKind.Enum => "writer.Write" + f.Suffix + "((" + f.Keyword + ")" + id + ");",
-                FieldKind.Value => "writer.Write" + f.Suffix + "(" + id + "." + f.RawMember + ");",
-                _ => id + ".WriteTo(ref writer);",
-            });
+                FieldKind.Primitive => "writer.Write" + f.Suffix + "(" + self + ");",
+                FieldKind.Enum => "writer.Write" + f.Suffix + "((" + f.Keyword + ")" + self + ");",
+                FieldKind.Value => "writer.Write" + f.Suffix + "(" + self + "." + f.RawMember + ");",
+                _ => self + ".WriteTo(ref writer);",
+            }));
         }
         w.Close();
     }
@@ -114,13 +102,34 @@ internal static class Emitter
         w.Open("public void ReadFrom(ref " + Ns + "SnapshotReader reader)");
         foreach (FieldModel f in m.Fields)
         {
-            string id = "this." + ModelBuilder.Escape(f.Name);
-            w.Line(f.Kind switch
+            ForEachSlot(w, f, (self, _, _, isElement) =>
             {
-                FieldKind.Primitive => id + " = reader.Read" + f.Suffix + "();",
-                FieldKind.Enum => id + " = (" + f.TypeName + ")reader.Read" + f.Suffix + "();",
-                FieldKind.Value => id + " = " + f.TypeName + "." + f.Factory + "(reader.Read" + f.Suffix + "());",
-                _ => id + ".ReadFrom(ref reader);",
+                switch (f.Kind)
+                {
+                    case FieldKind.Primitive:
+                        w.Line(self + " = reader.Read" + f.Suffix + "();");
+                        break;
+                    case FieldKind.Enum:
+                        w.Line(self + " = (" + f.TypeName + ")reader.Read" + f.Suffix + "();");
+                        break;
+                    case FieldKind.Value:
+                        w.Line(self + " = " + f.TypeName + "." + f.Factory + "(reader.Read" + f.Suffix + "());");
+                        break;
+                    default:
+                        if (isElement)
+                        {
+                            // Through a copy: an indexer returns values. Starting from the current element keeps
+                            // its [NoRollback] fields, as for a plain nested field.
+                            w.Line("var element = " + self + ";");
+                            w.Line("element.ReadFrom(ref reader);");
+                            w.Line(self + " = element;");
+                        }
+                        else
+                        {
+                            w.Line(self + ".ReadFrom(ref reader);");
+                        }
+                        break;
+                }
             });
         }
         w.Close();
@@ -145,33 +154,80 @@ internal static class Emitter
 
         foreach (FieldModel f in m.Fields)
         {
-            string name = ModelBuilder.Escape(f.Name);
-            string path = Fmt + "Join(path, \"" + f.Name + "\")";
-            switch (f.Kind)
+            ForEachSlot(w, f, (self, other, path, isElement) =>
             {
-                case FieldKind.Primitive:
-                    w.Line("if (this." + name + " != other." + name + ")");
-                    w.Line("    sink.Report(" + path + ", " + Fmt + "Of(this." + name + "), " + Fmt + "Of(other." + name + "));");
-                    break;
-                case FieldKind.Enum:
-                    w.Line("if (this." + name + " != other." + name + ")");
-                    w.Line("    sink.Report(" + path + ", this." + name + ".ToString(), other." + name + ".ToString());");
-                    break;
-                case FieldKind.Value:
+                switch (f.Kind)
                 {
-                    string left = "this." + name + "." + f.RawMember;
-                    string right = "other." + name + "." + f.RawMember;
-                    string bits = f.FixedPointBits.ToString(CultureInfo.InvariantCulture);
-                    string format = f.FixedPointBits >= 0 ? Fmt + "FixedPoint({0}, " + bits + ")" : Fmt + "Of({0})";
-                    w.Line("if (" + left + " != " + right + ")");
-                    w.Line("    sink.Report(" + path + ", " + string.Format(CultureInfo.InvariantCulture, format, left) + ", "
-                        + string.Format(CultureInfo.InvariantCulture, format, right) + ");");
-                    break;
+                    case FieldKind.Primitive:
+                        Compare(w, self, other, path, v => Fmt + "Of(" + v + ")");
+                        break;
+                    case FieldKind.Enum:
+                        Compare(w, self, other, path, v => v + ".ToString()");
+                        break;
+                    case FieldKind.Value:
+                        string bits = f.FixedPointBits.ToString(CultureInfo.InvariantCulture);
+                        Compare(w, self + "." + f.RawMember, other + "." + f.RawMember, path,
+                            v => f.FixedPointBits >= 0 ? Fmt + "FixedPoint(" + v + ", " + bits + ")" : Fmt + "Of(" + v + ")");
+                        break;
+                    default:
+                        if (isElement)
+                        {
+                            w.Line("var left = " + self + ";");
+                            w.Line("var right = " + other + ";");
+                            w.Line("left.DiffAgainst(in right, " + path + ", sink);");
+                        }
+                        else
+                        {
+                            w.Line(self + ".DiffAgainst(in " + other + ", " + path + ", sink);");
+                        }
+                        break;
                 }
-                default:
-                    w.Line("this." + name + ".DiffAgainst(in other." + name + ", " + path + ", sink);");
-                    break;
-            }
+            });
+        }
+        w.Close();
+    }
+
+    private static void Compare(CodeWriter w, string left, string right, string path, Func<string, string> format)
+    {
+        w.Line("if (" + left + " != " + right + ")");
+        w.Line("    sink.Report(" + path + ", " + format(left) + ", " + format(right) + ");");
+    }
+
+    private static void EmitLayout(CodeWriter w, TypeModel m)
+    {
+        w.Open("public void DescribeLayout(" + Ns + "SnapshotLayoutBuilder builder, string path)");
+
+        if (m.FixedPointBits >= 0)
+        {
+            FieldModel raw = m.Fields[0];
+            w.Line("builder.Add(path, " + Kind + raw.Suffix + ", \"" + m.DisplayName + "\", "
+                + m.FixedPointBits.ToString(CultureInfo.InvariantCulture) + ");");
+            w.Close();
+            return;
+        }
+
+        foreach (FieldModel f in m.Fields)
+        {
+            ForEachSlot(w, f, (self, _, path, _) =>
+            {
+                switch (f.Kind)
+                {
+                    case FieldKind.Primitive:
+                    case FieldKind.Value:
+                        w.Line("builder.Add(" + path + ", " + Kind + f.Suffix + ", \"" + f.DisplayType + "\", "
+                            + f.FixedPointBits.ToString(CultureInfo.InvariantCulture) + ");");
+                        break;
+                    case FieldKind.Enum:
+                        string values = string.Join(", ", f.EnumValues.Select(v => v.ToString(CultureInfo.InvariantCulture) + "L"));
+                        string names = string.Join(", ", f.EnumNames.Select(n => "\"" + n + "\""));
+                        w.Line("builder.AddEnum(" + path + ", " + Kind + f.Suffix + ", \"" + f.DisplayType + "\", "
+                            + "new long[] { " + values + " }, new string[] { " + names + " });");
+                        break;
+                    default:
+                        w.Line(self + ".DescribeLayout(builder, " + path + ");");
+                        break;
+                }
+            });
         }
         w.Close();
     }

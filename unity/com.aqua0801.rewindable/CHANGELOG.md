@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.0]
+
+- Fixed-capacity arrays: `FixedArray2/4/8/16<T>` and `[RollbackArray(n)]` for custom ones. Elements may be integers,
+  enums, `[RollbackValue]` or `[RollbackState]` types; diffs and layouts name them `Field[i]` (RWD011).
+- MIT license.
+
 ## [0.3.0]
 
 - Unity package (git URL install), runtime sources shared with the .NET build.

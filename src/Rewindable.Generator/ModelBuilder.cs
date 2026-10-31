@@ -14,6 +14,7 @@ internal static class ModelBuilder
     private const string NoRollbackAttribute = "Rewindable.NoRollbackAttribute";
     private const string FixedPointAttribute = "Rewindable.FixedPointAttribute";
     private const string RollbackValueAttribute = "Rewindable.RollbackValueAttribute";
+    private const string RollbackArrayAttribute = "Rewindable.RollbackArrayAttribute";
 
     public static GenerationResult Build(GeneratorAttributeSyntaxContext context, CancellationToken ct)
     {
@@ -112,6 +113,7 @@ internal static class ModelBuilder
             fixedPointBits = fixedPoint.ConstructorArguments.Length == 1 && fixedPoint.ConstructorArguments[0].Value is int bits ? bits : -1;
             bool validShape = fields.Count == 1
                 && fields[0].Kind == FieldKind.Primitive
+                && fields[0].ArrayLength == 0
                 && fields[0].Suffix is "Int16" or "Int32" or "Int64";
             if (!validShape || fixedPointBits < 0 || fixedPointBits > 62)
                 Report(Diagnostics.FixedPointShape, typeLocation, display);
@@ -145,19 +147,40 @@ internal static class ModelBuilder
         INamedTypeSymbol owner,
         Compilation compilation,
         Action<DiagnosticDescriptor, Location?, string[]> report)
+        => ClassifyType(field.Name, field.Type, location, owner, compilation, report, allowArray: true);
+
+    /// <summary>Classifies one value of <paramref name="type"/>: a field, or an element of a fixed array.</summary>
+    private static FieldModel? ClassifyType(
+        string name,
+        ITypeSymbol type,
+        Location? location,
+        INamedTypeSymbol owner,
+        Compilation compilation,
+        Action<DiagnosticDescriptor, Location?, string[]> report,
+        bool allowArray)
     {
-        ITypeSymbol type = field.Type;
         string typeName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        if (type is INamedTypeSymbol { TypeKind: TypeKind.Struct, IsGenericType: true } arrayType
+            && FindAttribute(arrayType.OriginalDefinition, RollbackArrayAttribute) is { } arrayAttribute)
+        {
+            if (!allowArray)
+            {
+                report(Diagnostics.Unsupported, location, new[] { name, "fixed arrays of fixed arrays" });
+                return null;
+            }
+            return ClassifyArray(name, arrayType, arrayAttribute, location, owner, compilation, report);
+        }
 
         if (type.TypeKind == TypeKind.Struct
             && type is INamedTypeSymbol named
             && FindAttribute(named.OriginalDefinition, RollbackValueAttribute) is { } valueAttribute)
         {
-            return ClassifyValue(field, location, named, valueAttribute, owner, compilation, report);
+            return ClassifyValue(name, location, named, valueAttribute, owner, compilation, report);
         }
 
         if (TryPrimitive(type.SpecialType, out var primitive))
-            return new FieldModel(field.Name, FieldKind.Primitive, primitive.Suffix, primitive.Keyword, typeName, primitive.Size,
+            return new FieldModel(name, FieldKind.Primitive, primitive.Suffix, primitive.Keyword, typeName, primitive.Size,
                 DisplayType: primitive.Keyword);
 
         switch (type.SpecialType)
@@ -165,11 +188,11 @@ internal static class ModelBuilder
             case SpecialType.System_Single:
             case SpecialType.System_Double:
             case SpecialType.System_Decimal:
-                report(Diagnostics.FloatingPointField, location, new[] { field.Name, type.ToDisplayString() });
+                report(Diagnostics.FloatingPointField, location, new[] { name, type.ToDisplayString() });
                 return null;
             case SpecialType.System_IntPtr:
             case SpecialType.System_UIntPtr:
-                report(Diagnostics.Unsupported, location, new[] { field.Name, "pointer-sized integers (nint/nuint)" });
+                report(Diagnostics.Unsupported, location, new[] { name, "pointer-sized integers (nint/nuint)" });
                 return null;
         }
 
@@ -181,7 +204,7 @@ internal static class ModelBuilder
             long[] values = members.Select(m => m.ConstantValue is ulong u
                 ? unchecked((long)u)
                 : Convert.ToInt64(m.ConstantValue, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
-            return new FieldModel(field.Name, FieldKind.Enum, enumPrimitive.Suffix, enumPrimitive.Keyword, typeName, enumPrimitive.Size,
+            return new FieldModel(name, FieldKind.Enum, enumPrimitive.Suffix, enumPrimitive.Keyword, typeName, enumPrimitive.Size,
                 DisplayType: type.ToDisplayString(),
                 EnumValues: new EquatableArray<long>(values),
                 EnumNames: new EquatableArray<string>(members.Select(m => m.Name).ToArray()));
@@ -189,31 +212,72 @@ internal static class ModelBuilder
 
         if (type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer)
         {
-            report(Diagnostics.Unsupported, location, new[] { field.Name, "pointers" });
+            report(Diagnostics.Unsupported, location, new[] { name, "pointers" });
             return null;
         }
 
         if (type.IsReferenceType || type.TypeKind == TypeKind.TypeParameter)
         {
-            report(Diagnostics.ReferenceTypeField, location, new[] { field.Name, type.ToDisplayString() });
+            report(Diagnostics.ReferenceTypeField, location, new[] { name, type.ToDisplayString() });
             return null;
         }
 
         if (type.TypeKind == TypeKind.Struct)
         {
             if (HasAttribute(type.OriginalDefinition, RollbackStateAttribute))
-                return new FieldModel(field.Name, FieldKind.Nested, string.Empty, string.Empty, typeName, 0);
+                return new FieldModel(name, FieldKind.Nested, string.Empty, string.Empty, typeName, 0);
 
-            report(Diagnostics.UnmarkedStructField, location, new[] { field.Name, type.ToDisplayString() });
+            report(Diagnostics.UnmarkedStructField, location, new[] { name, type.ToDisplayString() });
             return null;
         }
 
-        report(Diagnostics.Unsupported, location, new[] { field.Name, type.TypeKind + " fields" });
+        report(Diagnostics.Unsupported, location, new[] { name, type.TypeKind + " fields" });
         return null;
     }
 
+    private static FieldModel? ClassifyArray(
+        string name,
+        INamedTypeSymbol arrayType,
+        AttributeData attribute,
+        Location? location,
+        INamedTypeSymbol owner,
+        Compilation compilation,
+        Action<DiagnosticDescriptor, Location?, string[]> report)
+    {
+        string display = arrayType.OriginalDefinition.ToDisplayString();
+
+        FieldModel? Bad(string reason)
+        {
+            report(Diagnostics.InvalidRollbackArray, location, new[] { display, name, reason });
+            return null;
+        }
+
+        if (attribute.ConstructorArguments.Length != 1 || attribute.ConstructorArguments[0].Value is not int length || length < 1)
+            return Bad("the length must be a constant of at least 1");
+        if (arrayType.TypeArguments.Length != 1)
+            return Bad("the type must have exactly one type parameter (the element type)");
+
+        ITypeSymbol element = arrayType.TypeArguments[0];
+        IPropertySymbol? indexer = arrayType.GetMembers()
+            .OfType<IPropertySymbol>()
+            .FirstOrDefault(p => p.IsIndexer
+                && p.Parameters.Length == 1
+                && p.Parameters[0].Type.SpecialType == SpecialType.System_Int32
+                && SymbolEqualityComparer.Default.Equals(p.Type, element));
+
+        if (indexer?.GetMethod is null || indexer.SetMethod is null
+            || !compilation.IsSymbolAccessibleWithin(indexer.GetMethod, owner)
+            || !compilation.IsSymbolAccessibleWithin(indexer.SetMethod, owner))
+        {
+            return Bad("needs an accessible indexer 'T this[int]' with get and set");
+        }
+
+        FieldModel? model = ClassifyType(name, element, location, owner, compilation, report, allowArray: false);
+        return model is null ? null : model with { ArrayLength = length };
+    }
+
     private static FieldModel? ClassifyValue(
-        IFieldSymbol field,
+        string name,
         Location? location,
         INamedTypeSymbol valueType,
         AttributeData attribute,
@@ -225,7 +289,7 @@ internal static class ModelBuilder
 
         FieldModel? Bad(string reason)
         {
-            report(Diagnostics.InvalidRollbackValue, location, new[] { display, field.Name, reason });
+            report(Diagnostics.InvalidRollbackValue, location, new[] { display, name, reason });
             return null;
         }
 
@@ -286,7 +350,7 @@ internal static class ModelBuilder
         }
 
         return new FieldModel(
-            field.Name,
+            name,
             FieldKind.Value,
             primitive.Suffix,
             primitive.Keyword,

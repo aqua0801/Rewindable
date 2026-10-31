@@ -46,6 +46,23 @@ namespace Rewindable
     }
 
     /// <summary>
+    /// Marks a generic struct <c>Name&lt;T&gt;</c> as a fixed-capacity array of the given number of elements, usable
+    /// as a [RollbackState] field. The type needs a public <c>T this[int]</c> indexer with get and set; the generator
+    /// visits elements 0..length-1 through it. <see cref="FixedArray4{T}"/> and its siblings are ready-made ones.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Struct, Inherited = false, AllowMultiple = false)]
+    public sealed class RollbackArrayAttribute : Attribute
+    {
+        /// <param name="length">Number of elements, at least 1.</param>
+        public RollbackArrayAttribute(int length)
+        {
+            Length = length;
+        }
+
+        public int Length { get; }
+    }
+
+    /// <summary>
     /// Declares a [RollbackState] (or [RollbackValue]) struct as a fixed-point number wrapping exactly one
     /// <c>short</c>/<c>int</c>/<c>long</c> raw field. Only affects diff output, which shows
     /// the decimal value (e.g. <c>1.5 (raw 98304)</c>) instead of a nested raw field.

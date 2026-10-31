@@ -58,9 +58,15 @@ internal static class Diagnostics
         "[RollbackValue] on '{0}' (used by field '{1}'): {2}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor InvalidRollbackArray = new(
+        "RWD011", "Invalid [RollbackArray] type",
+        "[RollbackArray] on '{0}' (used by field '{1}'): {2}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
     public static readonly ImmutableDictionary<string, DiagnosticDescriptor> ById = new[]
     {
         FloatingPointField, ReferenceTypeField, UnmarkedStructField, FieldsInMultiplePartials,
         AutoProperty, ReadOnlyMember, FixedPointShape, NotPartial, Unsupported, InvalidRollbackValue,
+        InvalidRollbackArray,
     }.ToImmutableDictionary(d => d.Id);
 }

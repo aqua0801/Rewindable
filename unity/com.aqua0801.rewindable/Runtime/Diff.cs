@@ -44,6 +44,9 @@ namespace Rewindable
 
         public static string Path(string path) => string.IsNullOrEmpty(path) ? RootPath : path;
 
+        /// <summary>Path of an array element, e.g. <c>Projectiles[2]</c>.</summary>
+        public static string Index(string path, int index) => path + "[" + index.ToString(CultureInfo.InvariantCulture) + "]";
+
         public static string Of(bool value) => value ? "true" : "false";
         public static string Of(char value) => "'" + value + "' (U+" + ((int)value).ToString("X4", CultureInfo.InvariantCulture) + ")";
         public static string Of(sbyte value) => value.ToString(CultureInfo.InvariantCulture);

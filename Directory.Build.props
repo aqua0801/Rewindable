@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <Authors>Aqua0801</Authors>
     <!-- Keep in sync with unity/com.aqua0801.rewindable/package.json (PackageTests checks it). -->
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <UnityPackageDir>$(MSBuildThisFileDirectory)unity\com.aqua0801.rewindable\</UnityPackageDir>
   </PropertyGroup>
 

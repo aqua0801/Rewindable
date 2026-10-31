@@ -23,7 +23,7 @@ dotnet add package Rewindable
 **Unity** (`Packages/manifest.json`):
 
 ```json
-"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.3.0"
+"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.4.0"
 ```
 
 Then add `Rewindable` to the `references` of every asmdef that declares or uses `[RollbackState]` types. See
@@ -86,6 +86,7 @@ Fields are checked at compile time:
 | RWD008 | Error | The struct or one of its containing types is not `partial` |
 | RWD009 | Error | Not supported yet: generic types, ref structs, fixed buffers, pointers, `nint` |
 | RWD010 | Error | `[RollbackValue]` raw member or factory missing, of the wrong type, or not accessible |
+| RWD011 | Error | `[RollbackArray]` type without an accessible `T this[int]` get/set indexer, or with a length below 1 |
 
 Fields marked `[NoRollback]` are exempt. `static` and `const` fields are always ignored.
 
@@ -105,6 +106,30 @@ public readonly struct Fixed
 
 The snapshot stores only the raw value and restore calls `FromRaw(raw)`, so `FromRaw(x.RawValue)` must equal `x`.
 With `[FixedPoint]`, diffs show the value as a decimal.
+
+## Fixed-capacity arrays
+
+`FixedArray2<T>`, `FixedArray4<T>`, `FixedArray8<T>` and `FixedArray16<T>` store their elements inline, so a state
+stays one block of memory that is copied by value. Elements can be integers, enums, `[RollbackValue]` or
+`[RollbackState]` types:
+
+```csharp
+[RollbackState]
+public partial struct GameState
+{
+    public int Frame;
+    public FixedArray4<ProjectileState> Projectiles;
+}
+
+state.Projectiles[2] = spawned;                                         // assign
+FixedArray4<ProjectileState>.At(ref state.Projectiles, 2).Age++;        // modify in place
+```
+
+Snapshots, diffs and layouts visit elements in index order and name them by index
+(`Projectiles[2].PositionX: 3 != 3.5`). C# 9 does not let a struct return references to its own fields from an
+instance member, which is why in-place access goes through the static `At(ref array, index)`.
+
+Other sizes: mark any generic struct with `[RollbackArray(n)]` and give it a `T this[int]` indexer with get and set.
 
 ## Snapshot format
 
@@ -171,6 +196,7 @@ tools/Rewindable.Cli            `rewindable` CLI (diff / show .rwdump)
 tests/Rewindable.Tests              Behaviour tests (generator consumed as an analyzer) + package checks
 tests/Rewindable.Generator.Tests    Diagnostics and C# 9 compatibility of the generated code
 scripts/unity_meta.py           Creates missing Unity .meta files
+scripts/gen_fixed_arrays.py     Regenerates Runtime/FixedArrays.cs
 ```
 
 - The runtime is written in C# 9 for Unity; `src/Rewindable` compiles the package's `Runtime` folder rather than a
@@ -199,7 +225,7 @@ scripts/unity_meta.py           Creates missing Unity .meta files
 - [x] `DesyncRecorder` and `.rwdump` dumps
 - [x] `rewindable` CLI
 - [x] Unity package (git URL) and Desync Dump Diff window
-- [ ] Fixed-capacity array fields (`FixedArray8<T>` and similar)
+- [x] Fixed-capacity arrays (`FixedArray4<T>`, `[RollbackArray]`)
 - [ ] Light / full hash tiers (`[HashTier]`)
 - [ ] NuGet release
 
