@@ -22,4 +22,12 @@
     <InternalsVisibleTo Include="Rewindable.Generator.Tests" />
   </ItemGroup>
 
+  <!--
+    Release builds refresh the copy Unity uses (label RoslynAnalyzer, see its .meta). It sits under the Runtime asmdef
+    folder, so Unity runs it for the Rewindable assembly and every assembly that references it. Commit the DLL.
+  -->
+  <Target Name="CopyToUnityPackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(UnityPackageDir)Runtime\Analyzers\" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

@@ -1,13 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    The runtime sources live in the Unity package (unity/com.aqua0801.rewindable/Runtime), the single copy both
+    Unity and .NET compile. This project only builds them for NuGet / tests, under Unity's constraints.
+  -->
+
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;net10.0</TargetFrameworks>
-    <!-- Runtime sources stay C# 9 so they can be dropped into Unity as-is. -->
+    <!-- Unity compiles the same files with C# 9. -->
     <LangVersion>9.0</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Description>Compile-time generated snapshot / restore / checksum / diff for deterministic rollback game state.</Description>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Description>Compile-time generated snapshot / restore / checksum / diff for deterministic rollback game state, plus desync dumps.</Description>
     <PackageTags>rollback;netcode;determinism;source-generator;gamedev;unity</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(UnityPackageDir)Runtime\**\*.cs" Link="%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="$(AssemblyName).Tests" />

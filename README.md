@@ -109,20 +109,38 @@ frame 102: 1 field(s) differ
 
 `rewindable show x.rwdump --frame 101` 會印出某一幀的所有欄位。CLI 在 `tools/Rewindable.Cli`，可以用 `dotnet pack` 打包成 dotnet tool。
 
-## Unity
+## Unity（UPM 套件）
 
-- Runtime（`src/Rewindable`）以 C# 9 / netstandard2.1 撰寫，可直接放進 Unity。
-- Generator target netstandard2.0、Roslyn 4.3.1（Unity 2022.3+）。放進 Unity 時，將 `Rewindable.Generator.dll` 加上 `RoslynAnalyzer` label，並取消所有平台勾選。
-- 產生的程式碼已用 C# 9 語言版本測試可編譯。
+在 `Packages/manifest.json` 加上：
+
+```json
+"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.3.0"
+```
+
+接著在每個宣告或使用 `[RollbackState]` 型別的 asmdef 的 `references` 加上 `Rewindable`。Generator（`Runtime/Analyzers`）會對 `Rewindable` 組件本身，以及所有引用它的組件執行。
+
+**Window > Rewindable > Desync Dump Diff**：可以選兩個 `.rwdump`（或直接取 `persistentDataPath/desync` 裡最新的兩個），顯示比對報告，並逐幀並排列出每個欄位，有差異的會標成紅色。
+
+- Runtime 的原始碼只有一份，放在 `unity/com.aqua0801.rewindable/Runtime`，以 C# 9 撰寫。`src/Rewindable` 這個 .NET 專案直接編譯那些檔案。
+- Generator target netstandard2.0、Roslyn 4.3.1（Unity 2022.3+）。用 `dotnet build -c Release` 建置時，會自動把 dll 複製到套件的 `Runtime/Analyzers/`，記得一起 commit。
+- 套件裡新增檔案後，要執行 `python scripts/unity_meta.py` 補上 `.meta`。GUID 由路徑決定，重跑也不會改變。`PackageTests` 會檢查有沒有漏掉。
+
+### 發佈新版本
+
+1. 同時修改 `Directory.Build.props` 的 `<Version>` 和 `package.json` 的 `version`（測試會檢查兩者一致）。
+2. 執行 `dotnet build -c Release` 並 commit，包含更新後的 analyzer dll。
+3. 打 tag `vX.Y.Z` 並 push，再把專案 manifest 裡的 `#vX.Y.Z` 改成新版本。
 
 ## 專案結構
 
 ```
-src/Rewindable               runtime（attribute、SnapshotWriter/Reader、SnapshotRing、Diff）
-src/Rewindable.Generator     incremental source generator（ForAttributeWithMetadataName）
-tools/Rewindable.Cli         `rewindable` CLI（diff / show .rwdump）
-tests/Rewindable.Tests             以 analyzer 方式使用 generator 的行為測試
-tests/Rewindable.Generator.Tests   診斷規則與 C# 9 編譯相容性測試
+unity/com.aqua0801.rewindable   UPM 套件：Runtime（唯一的一份原始碼）、Analyzers、Editor 視窗
+src/Rewindable                  編譯套件 Runtime 的 .NET 專案（NuGet / 測試用）
+src/Rewindable.Generator        incremental source generator（ForAttributeWithMetadataName）
+tools/Rewindable.Cli            `rewindable` CLI（diff / show .rwdump）
+tests/Rewindable.Tests              行為測試（以 analyzer 方式使用 generator）+ 套件守門測試
+tests/Rewindable.Generator.Tests    診斷規則與 C# 9 編譯相容性測試
+scripts/unity_meta.py           補上缺少的 .meta
 ```
 
 ## Roadmap
@@ -130,6 +148,6 @@ tests/Rewindable.Generator.Tests   診斷規則與 C# 9 編譯相容性測試
 - [ ] 固定容量陣列欄位（`FixedArray8<T>` 之類）
 - [x] `DesyncRecorder` 與 `.rwdump`
 - [x] Dump 比對 CLI
-- [ ] Dump 比對 Unity EditorWindow
+- [x] Dump 比對 Unity EditorWindow
 - [ ] Light / full 兩層 hash（`[HashTier]`）
-- [ ] UPM 套件發佈
+- [x] UPM 套件（git URL）

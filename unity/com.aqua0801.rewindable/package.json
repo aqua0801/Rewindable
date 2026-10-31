@@ -1,0 +1,17 @@
+{
+  "name": "com.aqua0801.rewindable",
+  "version": "0.3.0",
+  "displayName": "Rewindable",
+  "description": "Compile-time snapshot / restore / checksum / field-level diff for deterministic rollback game state, desync dumps (.rwdump) and a dump diff window.",
+  "unity": "2022.3",
+  "author": {
+    "name": "Aqua0801"
+  },
+  "keywords": [
+    "rollback",
+    "netcode",
+    "determinism",
+    "source-generator",
+    "desync"
+  ]
+}
