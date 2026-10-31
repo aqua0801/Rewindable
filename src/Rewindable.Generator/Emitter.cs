@@ -32,9 +32,49 @@ internal static class Emitter
         EmitRead(w, m);
         w.Line();
         EmitDiff(w, m);
+        w.Line();
+        EmitLayout(w, m);
 
         w.CloseAll();
         return w.ToString();
+    }
+
+    private static void EmitLayout(CodeWriter w, TypeModel m)
+    {
+        const string Kind = Ns + "LeafKind.";
+        w.Open("public void DescribeLayout(" + Ns + "SnapshotLayoutBuilder builder, string path)");
+
+        if (m.FixedPointBits >= 0)
+        {
+            FieldModel raw = m.Fields[0];
+            w.Line("builder.Add(path, " + Kind + raw.Suffix + ", \"" + m.DisplayName + "\", "
+                + m.FixedPointBits.ToString(CultureInfo.InvariantCulture) + ");");
+            w.Close();
+            return;
+        }
+
+        foreach (FieldModel f in m.Fields)
+        {
+            string path = Fmt + "Join(path, \"" + f.Name + "\")";
+            switch (f.Kind)
+            {
+                case FieldKind.Primitive:
+                case FieldKind.Value:
+                    w.Line("builder.Add(" + path + ", " + Kind + f.Suffix + ", \"" + f.DisplayType + "\", "
+                        + f.FixedPointBits.ToString(CultureInfo.InvariantCulture) + ");");
+                    break;
+                case FieldKind.Enum:
+                    string values = string.Join(", ", f.EnumValues.Select(v => v.ToString(CultureInfo.InvariantCulture) + "L"));
+                    string names = string.Join(", ", f.EnumNames.Select(n => "\"" + n + "\""));
+                    w.Line("builder.AddEnum(" + path + ", " + Kind + f.Suffix + ", \"" + f.DisplayType + "\", "
+                        + "new long[] { " + values + " }, new string[] { " + names + " });");
+                    break;
+                default:
+                    w.Line("this." + ModelBuilder.Escape(f.Name) + ".DescribeLayout(builder, " + path + ");");
+                    break;
+            }
+        }
+        w.Close();
     }
 
     private static void EmitSize(CodeWriter w, TypeModel m)

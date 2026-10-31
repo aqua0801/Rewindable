@@ -82,6 +82,33 @@ Snapshot 只存 raw，還原時呼叫 `FromRaw(raw)`，所以必須滿足 `FromR
 - `bool` 1 byte、`char` 2 bytes、enum 依底層型別。
 - 每個型別有 `public const int RollbackSnapshotSize`，巢狀型別在編譯期加總。
 
+## 線上 desync 診斷
+
+Peer 之間通常只交換 hash，對不上時只知道「某一幀壞了」。`DesyncRecorder<T>` 會在預先配置好的 buffer 裡保留最近 N 個已確認的幀（snapshot、遊戲自己的 checksum、產生該幀的輸入），每幀記錄不配置記憶體。偵測到 desync 時，呼叫 `CreateDump` 存成 `.rwdump`：
+
+```csharp
+var recorder = new DesyncRecorder<GameState>(capacity: 240, inputBytesPerFrame: 4);
+recorder.Record(frame, in state, state.Hash(), inputsThatProducedThisFrame);   // 每個已確認的幀
+
+// hash 對不上時
+recorder.CreateDump("P2", desyncFrame).Save("p2.rwdump");
+```
+
+`.rwdump` 會把 layout 一起存進去（每個欄位的路徑、型別、enum 名稱、定點數格式），所以比對時不需要遊戲本身的 dll：
+
+```
+> rewindable diff p1.rwdump p2.rwdump --follow 5
+common frames: 5..124 (120)
+first divergent state: frame 101
+  Player1.Meter: 0 | 1
+=> frame 100 matches and the inputs into frame 101 match: the step is not deterministic here ...
+frame 102: 1 field(s) differ
+```
+
+判斷出的原因（`DivergenceCause`）：`Step`（同樣的前一幀和輸入，結果卻不同）、`Inputs`（輸入不同）、`ChecksumOnly`（所有欄位都一致，只有 hash 不同，代表 hash 讀到 snapshot 以外的資料）、`BeforeWindow`（分歧點早於錄製範圍）。
+
+`rewindable show x.rwdump --frame 101` 會印出某一幀的所有欄位。CLI 在 `tools/Rewindable.Cli`，可以用 `dotnet pack` 打包成 dotnet tool。
+
 ## Unity
 
 - Runtime（`src/Rewindable`）以 C# 9 / netstandard2.1 撰寫，可直接放進 Unity。
@@ -93,6 +120,7 @@ Snapshot 只存 raw，還原時呼叫 `FromRaw(raw)`，所以必須滿足 `FromR
 ```
 src/Rewindable               runtime（attribute、SnapshotWriter/Reader、SnapshotRing、Diff）
 src/Rewindable.Generator     incremental source generator（ForAttributeWithMetadataName）
+tools/Rewindable.Cli         `rewindable` CLI（diff / show .rwdump）
 tests/Rewindable.Tests             以 analyzer 方式使用 generator 的行為測試
 tests/Rewindable.Generator.Tests   診斷規則與 C# 9 編譯相容性測試
 ```
@@ -100,7 +128,8 @@ tests/Rewindable.Generator.Tests   診斷規則與 C# 9 編譯相容性測試
 ## Roadmap
 
 - [ ] 固定容量陣列欄位（`FixedArray8<T>` 之類）
-- [ ] `DesyncRecorder`：每幀 checksum，對不上時 dump 前後幀
-- [ ] Dump 比對 CLI / Unity EditorWindow
+- [x] `DesyncRecorder` 與 `.rwdump`
+- [x] Dump 比對 CLI
+- [ ] Dump 比對 Unity EditorWindow
 - [ ] Light / full 兩層 hash（`[HashTier]`）
 - [ ] UPM 套件發佈

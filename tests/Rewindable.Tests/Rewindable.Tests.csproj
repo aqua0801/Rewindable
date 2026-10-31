@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\Rewindable\Rewindable.csproj" />
     <!-- Consume the generator exactly like a package user would. -->
     <ProjectReference Include="..\..\src\Rewindable.Generator\Rewindable.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\tools\Rewindable.Cli\Rewindable.Cli.csproj" />
   </ItemGroup>
 
 </Project>

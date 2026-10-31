@@ -10,6 +10,9 @@
     <Project Path="src/Rewindable/Rewindable.csproj" />
     <Project Path="src/Rewindable.Generator/Rewindable.Generator.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Rewindable.Cli/Rewindable.Cli.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Rewindable.Tests/Rewindable.Tests.csproj" />
     <Project Path="tests/Rewindable.Generator.Tests/Rewindable.Generator.Tests.csproj" />

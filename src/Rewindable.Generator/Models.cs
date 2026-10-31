@@ -24,6 +24,9 @@ internal enum FieldKind
 /// <param name="RawMember">[RollbackValue] raw member name (escaped), else empty.</param>
 /// <param name="Factory">[RollbackValue] factory method name (escaped), else empty.</param>
 /// <param name="FixedPointBits">Fractional bits for a [FixedPoint] value, else -1.</param>
+/// <param name="DisplayType">Type name shown in layouts (keyword for primitives, e.g. "Game.ActionId" otherwise).</param>
+/// <param name="EnumValues">Enum member values (as long), parallel to <paramref name="EnumNames"/>.</param>
+/// <param name="EnumNames">Enum member names.</param>
 internal sealed record FieldModel(
     string Name,
     FieldKind Kind,
@@ -33,7 +36,10 @@ internal sealed record FieldModel(
     int Size,
     string RawMember = "",
     string Factory = "",
-    int FixedPointBits = -1);
+    int FixedPointBits = -1,
+    string DisplayType = "",
+    EquatableArray<long> EnumValues = default,
+    EquatableArray<string> EnumNames = default);
 
 internal sealed record ContainingTypeModel(string Keyword, string Name);
 
@@ -42,6 +48,7 @@ internal sealed record TypeModel(
     string Keyword,
     string Name,
     string FullName,
+    string DisplayName,
     string HintName,
     EquatableArray<ContainingTypeModel> ContainingTypes,
     EquatableArray<FieldModel> Fields,

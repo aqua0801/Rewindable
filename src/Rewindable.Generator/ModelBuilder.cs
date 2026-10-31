@@ -130,6 +130,7 @@ internal static class ModelBuilder
             Keyword: TypeKeyword(symbol),
             Name: Escape(symbol.Name),
             FullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            DisplayName: display,
             HintName: HintName(symbol),
             ContainingTypes: new EquatableArray<ContainingTypeModel>(containing.ToArray()),
             Fields: new EquatableArray<FieldModel>(fields.ToArray()),
@@ -156,7 +157,8 @@ internal static class ModelBuilder
         }
 
         if (TryPrimitive(type.SpecialType, out var primitive))
-            return new FieldModel(field.Name, FieldKind.Primitive, primitive.Suffix, primitive.Keyword, typeName, primitive.Size);
+            return new FieldModel(field.Name, FieldKind.Primitive, primitive.Suffix, primitive.Keyword, typeName, primitive.Size,
+                DisplayType: primitive.Keyword);
 
         switch (type.SpecialType)
         {
@@ -172,10 +174,17 @@ internal static class ModelBuilder
         }
 
         if (type.TypeKind == TypeKind.Enum
-            && type is INamedTypeSymbol { EnumUnderlyingType: { } underlying }
+            && type is INamedTypeSymbol { EnumUnderlyingType: { } underlying } enumType
             && TryPrimitive(underlying.SpecialType, out var enumPrimitive))
         {
-            return new FieldModel(field.Name, FieldKind.Enum, enumPrimitive.Suffix, enumPrimitive.Keyword, typeName, enumPrimitive.Size);
+            IFieldSymbol[] members = enumType.GetMembers().OfType<IFieldSymbol>().Where(m => m.IsStatic && m.HasConstantValue).ToArray();
+            long[] values = members.Select(m => m.ConstantValue is ulong u
+                ? unchecked((long)u)
+                : Convert.ToInt64(m.ConstantValue, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            return new FieldModel(field.Name, FieldKind.Enum, enumPrimitive.Suffix, enumPrimitive.Keyword, typeName, enumPrimitive.Size,
+                DisplayType: type.ToDisplayString(),
+                EnumValues: new EquatableArray<long>(values),
+                EnumNames: new EquatableArray<string>(members.Select(m => m.Name).ToArray()));
         }
 
         if (type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer)
@@ -285,7 +294,8 @@ internal static class ModelBuilder
             primitive.Size,
             Escape(rawName),
             Escape(factoryName),
-            fixedPointBits);
+            fixedPointBits,
+            DisplayType: valueType.ToDisplayString());
     }
 
     private static AttributeData? FindAttribute(ISymbol symbol, string fullName) =>

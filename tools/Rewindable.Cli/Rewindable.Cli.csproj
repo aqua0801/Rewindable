@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <!-- Must not be "rewindable": on case-insensitive file systems it would overwrite Rewindable.dll. -->
+    <AssemblyName>Rewindable.Cli</AssemblyName>
+    <RootNamespace>Rewindable.Cli</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>rewindable</ToolCommandName>
+    <PackageId>Rewindable.Cli</PackageId>
+    <Description>Inspect and compare Rewindable desync dumps (.rwdump).</Description>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Rewindable\Rewindable.csproj" />
+    <InternalsVisibleTo Include="Rewindable.Tests" />
+  </ItemGroup>
+
+</Project>

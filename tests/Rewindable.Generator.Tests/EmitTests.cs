@@ -72,4 +72,18 @@ public class EmitTests
             "RollbackSnapshotSize = 4 + global::Game.Sim.Outer.Fighter.RollbackSnapshotSize + global::Game.Sim.Outer.Fighter.RollbackSnapshotSize + 8;",
             match);
     }
+
+    [Fact]
+    public void Layout_EmitsEnumMembers_AndFixedPointBits()
+    {
+        var result = GeneratorHarness.Run(UnityStyleSource);
+        string fighter = result.GeneratedSources.Single(s => s.Contains("partial struct Fighter"));
+        string fixedPoint = result.GeneratedSources.Single(s => s.Contains("partial struct Fixed"));
+
+        Assert.Contains(
+            "builder.AddEnum(global::Rewindable.RollbackFormat.Join(path, \"Action\"), global::Rewindable.LeafKind.UInt16, \"Game.Sim.ActionId\", "
+            + "new long[] { 0L, 1L, 2L }, new string[] { \"Idle\", \"Walk\", \"Attack\" });",
+            fighter);
+        Assert.Contains("builder.Add(path, global::Rewindable.LeafKind.Int32, \"Game.Sim.Fixed\", 16);", fixedPoint);
+    }
 }

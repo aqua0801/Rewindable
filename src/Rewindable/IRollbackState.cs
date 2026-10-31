@@ -16,5 +16,11 @@ namespace Rewindable
 
         /// <summary>Reports every differing leaf field to <paramref name="sink"/>.</summary>
         void DiffAgainst(in T other, string path, IDiffSink sink);
+
+        /// <summary>
+        /// Describes every leaf field (path, kind, display type) in snapshot order. Lets a snapshot be read without
+        /// the type, e.g. by the dump tools. Use <see cref="SnapshotLayout.Of{T}"/> rather than calling it directly.
+        /// </summary>
+        void DescribeLayout(SnapshotLayoutBuilder builder, string path);
     }
 }
