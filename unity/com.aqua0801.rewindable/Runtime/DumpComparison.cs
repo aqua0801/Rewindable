@@ -78,7 +78,7 @@ namespace Rewindable
         {
             if (!Left.Layout.IsCompatibleWith(Right.Layout, out string problem))
             {
-                Incomparable("layouts differ (" + problem + "); were both dumps made by the same build?");
+                Incomparable("layouts differ (" + problem + "); the dumps come from builds with different state types.");
                 return;
             }
             if (Left.InputBytesPerFrame != Right.InputBytesPerFrame)
@@ -201,6 +201,6 @@ namespace Rewindable
             (d.Label.Length == 0 ? "(no label)" : d.Label)
             + ", frames " + Range(d)
             + (d.MarkFrame >= 0 ? ", flagged at " + d.MarkFrame.ToString(CultureInfo.InvariantCulture) : "")
-            + ", " + d.Layout.TypeName;
+            + ", " + d.Layout.TypeName + " (layout " + d.Layout.FingerprintText + ")";
     }
 }

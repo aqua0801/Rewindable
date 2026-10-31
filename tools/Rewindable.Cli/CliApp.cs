@@ -103,6 +103,7 @@ internal static class CliApp
         DesyncDump dump = DesyncDump.Load(path);
         output.WriteLine("label   : " + (dump.Label.Length == 0 ? "(none)" : dump.Label));
         output.WriteLine("type    : " + dump.Layout.TypeName + " (" + dump.Layout.Fields.Count + " fields, " + dump.Layout.Size + " bytes)");
+        output.WriteLine("layout  : " + dump.Layout.FingerprintText);
         output.WriteLine("created : " + DateTimeOffset.FromUnixTimeMilliseconds(dump.CreatedUnixMs).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
         output.WriteLine("flagged : " + (dump.MarkFrame >= 0 ? dump.MarkFrame.ToString(CultureInfo.InvariantCulture) : "-"));
         output.WriteLine("frames  : " + (dump.Frames.Count == 0 ? "none" : dump.Frames[0].Frame + ".." + dump.Frames[^1].Frame + " (" + dump.Frames.Count + ")"));

@@ -8,7 +8,7 @@ dump diff window. Full documentation: the repository README.
 `Packages/manifest.json`:
 
 ```json
-"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.4.0"
+"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.5.0"
 ```
 
 Then add `Rewindable` to the `references` of every asmdef that declares `[RollbackState]` types or uses them.

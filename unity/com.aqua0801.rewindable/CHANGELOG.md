@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0]
+
+- `SnapshotLayout.Fingerprint`: a frozen 64-bit hash of the layout's shape (paths, encodings, fixed-point bits, enum
+  members; not type names). Shown by `rewindable show`, the comparison report and the Desync Dump Diff window.
+- `SnapshotLayout.DescribeDifferences` lists added (`+`), removed (`-`) and changed (`~`) fields between two layouts.
+- `IsCompatibleWith` now compares fingerprints, so dumps of a renamed or moved type stay comparable; incomparable
+  dumps explain which fields differ.
+
 ## [0.4.0]
 
 - Fixed-capacity arrays: `FixedArray2/4/8/16<T>` and `[RollbackArray(n)]` for custom ones. Elements may be integers,

@@ -4,6 +4,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 
 namespace Rewindable
 {
@@ -125,8 +126,6 @@ namespace Rewindable
             return value.ToString(CultureInfo.InvariantCulture);
         }
 
-        internal bool SameShape(LayoutField other) =>
-            Path == other.Path && Kind == other.Kind && Offset == other.Offset;
     }
 
     /// <summary>Collects leaves in snapshot order. Used by generated <c>DescribeLayout</c>.</summary>
@@ -172,6 +171,7 @@ namespace Rewindable
             foreach (LayoutField f in fields)
                 size += f.Size;
             Size = size;
+            Fingerprint = ComputeFingerprint(fields);
         }
 
         public string TypeName { get; }
@@ -180,6 +180,17 @@ namespace Rewindable
         public int Size { get; }
 
         public IReadOnlyList<LayoutField> Fields => _fields;
+
+        /// <summary>
+        /// 64-bit fingerprint of the layout's shape: every leaf's path, encoding, fixed-point bits and enum members, in
+        /// snapshot order. Equal fingerprints mean a snapshot taken with one layout reads correctly with the other.
+        /// Type names are deliberately left out, so renaming or moving a type keeps its snapshots readable.
+        /// The algorithm is frozen: fingerprints are meant to be stored (dumps, replays) and sent (handshakes).
+        /// </summary>
+        public ulong Fingerprint { get; }
+
+        /// <summary><see cref="Fingerprint"/> as 16 lowercase hex digits.</summary>
+        public string FingerprintText => Fingerprint.ToString("x16", CultureInfo.InvariantCulture);
 
         /// <summary>The layout of <typeparamref name="T"/>, built once and cached.</summary>
         public static SnapshotLayout Of<T>() where T : struct, IRollbackState<T> => Cache<T>.Value;
@@ -203,29 +214,132 @@ namespace Rewindable
             return collector.Diffs;
         }
 
-        /// <summary>Same type name and same leaves at the same offsets.</summary>
+        /// <summary>
+        /// True when both layouts have the same <see cref="Fingerprint"/> (type names may differ). Otherwise
+        /// <paramref name="problem"/> names both fingerprints and the first field differences.
+        /// </summary>
         public bool IsCompatibleWith(SnapshotLayout other, out string problem)
         {
-            if (TypeName != other.TypeName)
+            if (Fingerprint == other.Fingerprint)
             {
-                problem = "type " + TypeName + " vs " + other.TypeName;
-                return false;
+                problem = string.Empty;
+                return true;
             }
-            if (_fields.Length != other._fields.Length)
+
+            const int Shown = 8;
+            IReadOnlyList<string> differences = DescribeDifferences(other);
+            var sb = new StringBuilder("fingerprint ").Append(FingerprintText).Append(" vs ").Append(other.FingerprintText).Append(": ");
+            for (int i = 0; i < differences.Count && i < Shown; i++)
+                sb.Append(i == 0 ? "" : ", ").Append(differences[i]);
+            if (differences.Count > Shown)
+                sb.Append(", ... (").Append(differences.Count).Append(" differences)");
+            problem = sb.ToString();
+            return false;
+        }
+
+        /// <summary>
+        /// How <paramref name="other"/> differs from this layout: <c>+ path</c> only in other, <c>- path</c> only here,
+        /// <c>~ path: what changed</c>. Empty when the fingerprints match; "field order differs" when only the order does.
+        /// </summary>
+        public IReadOnlyList<string> DescribeDifferences(SnapshotLayout other)
+        {
+            var result = new List<string>();
+            if (Fingerprint == other.Fingerprint)
+                return result;
+
+            var mine = new Dictionary<string, LayoutField>(StringComparer.Ordinal);
+            foreach (LayoutField f in _fields)
+                mine[f.Path] = f;
+            var theirs = new Dictionary<string, LayoutField>(StringComparer.Ordinal);
+            foreach (LayoutField f in other._fields)
+                theirs[f.Path] = f;
+
+            foreach (LayoutField f in _fields)
             {
-                problem = _fields.Length + " fields vs " + other._fields.Length;
-                return false;
+                if (!theirs.TryGetValue(f.Path, out LayoutField? o))
+                    result.Add("- " + f.Path);
+                else if (Change(f, o) is { } change)
+                    result.Add("~ " + f.Path + ": " + change);
             }
-            for (int i = 0; i < _fields.Length; i++)
+            foreach (LayoutField o in other._fields)
             {
-                if (!_fields[i].SameShape(other._fields[i]))
-                {
-                    problem = "field #" + i + ": " + _fields[i].Path + " vs " + other._fields[i].Path;
+                if (!mine.ContainsKey(o.Path))
+                    result.Add("+ " + o.Path);
+            }
+            if (result.Count == 0)
+                result.Add("field order differs");
+            return result;
+        }
+
+        private static string? Change(LayoutField a, LayoutField b)
+        {
+            if (a.Kind != b.Kind)
+                return a.Kind + " -> " + b.Kind;
+            if (a.FixedPointBits != b.FixedPointBits)
+                return "fixed-point bits " + a.FixedPointBits + " -> " + b.FixedPointBits;
+            if (!SameEnumMembers(a, b))
+                return "enum members differ";
+            return null;
+        }
+
+        private static bool SameEnumMembers(LayoutField a, LayoutField b)
+        {
+            if (a.EnumValues == null || b.EnumValues == null)
+                return a.EnumValues == null && b.EnumValues == null;
+            if (a.EnumValues.Length != b.EnumValues.Length)
+                return false;
+            for (int i = 0; i < a.EnumValues.Length; i++)
+            {
+                if (a.EnumValues[i] != b.EnumValues[i] || a.EnumNames![i] != b.EnumNames![i])
                     return false;
+            }
+            return true;
+        }
+
+        // Frozen format: changing anything here changes every stored fingerprint.
+        private static ulong ComputeFingerprint(LayoutField[] fields)
+        {
+            ulong h = RollbackChecksum.OffsetBasis;
+            h = Mix(h, "rewindable-layout/1");
+            h = Mix(h, fields.Length);
+            foreach (LayoutField f in fields)
+            {
+                h = Mix(h, f.Path);
+                h = Mix(h, (int)f.Kind);
+                h = Mix(h, f.FixedPointBits);
+                int members = f.EnumValues?.Length ?? -1;
+                h = Mix(h, members);
+                for (int i = 0; i < members; i++)
+                {
+                    h = Mix(h, f.EnumValues![i]);
+                    h = Mix(h, f.EnumNames![i]);
                 }
             }
-            problem = string.Empty;
-            return true;
+            return h;
+        }
+
+        private static ulong Mix(ulong hash, long value)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                hash ^= (byte)(value >> (8 * i));
+                hash = unchecked(hash * RollbackChecksum.Prime);
+            }
+            return hash;
+        }
+
+        private static ulong Mix(ulong hash, int value) => Mix(hash, (long)value);
+
+        private static ulong Mix(ulong hash, string value)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(value);
+            hash = Mix(hash, bytes.Length);
+            foreach (byte b in bytes)
+            {
+                hash ^= b;
+                hash = unchecked(hash * RollbackChecksum.Prime);
+            }
+            return hash;
         }
 
         internal void WriteTo(BinaryWriter w)

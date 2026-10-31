@@ -23,7 +23,7 @@ dotnet add package Rewindable
 **Unity** (`Packages/manifest.json`):
 
 ```json
-"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.4.0"
+"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.5.0"
 ```
 
 Then add `Rewindable` to the `references` of every asmdef that declares or uses `[RollbackState]` types. See
@@ -130,6 +130,25 @@ Snapshots, diffs and layouts visit elements in index order and name them by inde
 instance member, which is why in-place access goes through the static `At(ref array, index)`.
 
 Other sizes: mark any generic struct with `[RollbackArray(n)]` and give it a `T this[int]` indexer with get and set.
+
+## Layout fingerprints
+
+`SnapshotLayout.Of<T>().Fingerprint` is a 64-bit hash of the snapshot's shape: every leaf's path, encoding,
+fixed-point bits and enum members, in order. Two builds with the same fingerprint read each other's snapshots
+correctly; type names are left out, so renaming or moving a type does not change it. The algorithm is frozen, so a
+fingerprint can be stored or sent:
+
+```csharp
+// e.g. in a netcode handshake: refuse a peer whose build has a different state layout
+ulong mine = SnapshotLayout.Of<GameState>().Fingerprint;
+```
+
+When two dumps have different fingerprints, the comparison says how the layouts differ instead of reporting
+nonsense field diffs:
+
+```
+cannot compare: layouts differ (fingerprint 3f0c... vs 91ab...: ~ Player1.Hp: Int32 -> Int16, + Player1.Guard); ...
+```
 
 ## Snapshot format
 
