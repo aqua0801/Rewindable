@@ -23,7 +23,7 @@ dotnet add package Rewindable
 **Unity** (`Packages/manifest.json`):
 
 ```json
-"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.5.0"
+"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.6.0"
 ```
 
 Then add `Rewindable` to the `references` of every asmdef that declares or uses `[RollbackState]` types. See
@@ -195,6 +195,43 @@ frame 102: 1 field(s) differ
 `rewindable show x.rwdump --frame 101` prints every field of one frame. The CLI lives in `tools/Rewindable.Cli`
 and packs as a .NET tool (`dotnet pack`, command name `rewindable`). Exit codes: 0 no divergence, 1 diverged, 2 error.
 
+## Replays and regression tests
+
+A `.rwreplay` file is a start state, every frame's inputs and a keyframe (full snapshot plus the game's checksum)
+every N frames. Replaying it through the current build answers "does this build still play the recorded match the
+same way?" and, when it does not, names the fields and the window of frames where it went wrong.
+
+```csharp
+var recorder = new ReplayRecorder<GameState>(in state, startFrame: 0, state.Hash(), inputBytesPerFrame: 4,
+                                             checkpointInterval: 60);
+recorder.Metadata["build"] = Application.version;
+// every simulated frame: the inputs into the frame and the state they produced
+recorder.Record(inputs, in state, state.Hash());
+recorder.Build().Save("match.rwreplay");
+```
+
+```csharp
+// in a test: the recorded match must still reproduce bit for bit
+ReplayResult result = Replay.Load("match.rwreplay").Verify<GameState>(Simulation.Step, (in GameState s) => s.Hash());
+Assert.True(result.Succeeded, result.ToReport());
+```
+
+```
+replay diverged at keyframe 180 (last match: 120):
+  P2.Hp: recorded 612, now 611
+=> the simulation changed, or is not deterministic, between frames 120 and 180.
+```
+
+| Status | Meaning |
+|---|---|
+| `Matched` | Every keyframe reproduced (and every checksum, if a checksum function was given). |
+| `Diverged` | A keyframe's state differs; `Differences` lists the fields, `LastMatchingFrame` bounds the window. |
+| `ChecksumMismatch` | The state matches but the checksum does not: the hash reads data outside the snapshot. |
+| `Incompatible` | The replay was recorded with another state layout (by fingerprint; renamed types still match). |
+
+Recording does not allocate between keyframes. `Replay.StateAt(frame, step)` seeks from the nearest keyframe, and
+`rewindable show match.rwreplay [--frame N]` prints the summary, metadata and any keyframe's fields.
+
 ## Unity
 
 The package lives in `unity/com.aqua0801.rewindable` and is installed by git URL (see [Install](#install)).
@@ -211,7 +248,7 @@ The package lives in `unity/com.aqua0801.rewindable` and is installed by git URL
 unity/com.aqua0801.rewindable   Unity package: Runtime (the only copy of the runtime sources), Analyzers, Editor window
 src/Rewindable                  .NET project that compiles the package's Runtime folder (NuGet, tests)
 src/Rewindable.Generator        Incremental source generator (Roslyn 4.3.1, ForAttributeWithMetadataName)
-tools/Rewindable.Cli            `rewindable` CLI (diff / show .rwdump)
+tools/Rewindable.Cli            `rewindable` CLI (diff / show .rwdump, show .rwreplay)
 tests/Rewindable.Tests              Behaviour tests (generator consumed as an analyzer) + package checks
 tests/Rewindable.Generator.Tests    Diagnostics and C# 9 compatibility of the generated code
 scripts/unity_meta.py           Creates missing Unity .meta files
@@ -245,6 +282,8 @@ scripts/gen_fixed_arrays.py     Regenerates Runtime/FixedArrays.cs
 - [x] `rewindable` CLI
 - [x] Unity package (git URL) and Desync Dump Diff window
 - [x] Fixed-capacity arrays (`FixedArray4<T>`, `[RollbackArray]`)
+- [x] Layout fingerprints
+- [x] Replays (`.rwreplay`) for regression tests
 - [ ] Light / full hash tiers (`[HashTier]`)
 - [ ] NuGet release
 

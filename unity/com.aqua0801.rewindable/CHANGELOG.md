@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0]
+
+- Replays: `ReplayRecorder<T>` records a start state, every frame's inputs and periodic keyframes into a `.rwreplay`
+  file without allocating between keyframes. `Replay.Verify` re-runs it through the current simulation and reports
+  `Matched`, `Diverged` (fields and frame window), `ChecksumMismatch` or `Incompatible` (layout fingerprint).
+- `Replay.StateAt` seeks to any frame from the nearest keyframe.
+- `rewindable show` accepts `.rwreplay` files (summary, metadata, `--frame N` for keyframes).
+
 ## [0.5.0]
 
 - `SnapshotLayout.Fingerprint`: a frozen 64-bit hash of the layout's shape (paths, encodings, fixed-point bits, enum

@@ -1,6 +1,6 @@
 {
   "name": "com.aqua0801.rewindable",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "displayName": "Rewindable",
   "description": "Compile-time snapshot / restore / checksum / field-level diff for deterministic rollback game state, desync dumps (.rwdump) and a dump diff window.",
   "unity": "2022.3",

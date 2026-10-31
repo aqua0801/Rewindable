@@ -98,7 +98,10 @@ internal static class CliApp
                 return Usage(output, Error, "unexpected argument '" + args[i] + "'");
         }
         if (path == null)
-            return Usage(output, Error, "show needs a dump file");
+            return Usage(output, Error, "show needs a dump or replay file");
+
+        if (IsReplay(path))
+            return ShowReplay(Replay.Load(path), frame, output);
 
         DesyncDump dump = DesyncDump.Load(path);
         output.WriteLine("label   : " + (dump.Label.Length == 0 ? "(none)" : dump.Label));
@@ -131,6 +134,43 @@ internal static class CliApp
         return Ok;
     }
 
+    private static bool IsReplay(string path)
+    {
+        byte[] head = new byte[8];
+        using (FileStream fs = File.OpenRead(path))
+        {
+            int read = fs.Read(head, 0, head.Length);
+            return read == head.Length && Encoding.ASCII.GetString(head) == "RWREPLAY";
+        }
+    }
+
+    private static int ShowReplay(Replay replay, int? frame, TextWriter output)
+    {
+        output.WriteLine("replay  : " + replay.Layout.TypeName + " (" + replay.Layout.Fields.Count + " fields, " + replay.Layout.Size + " bytes)");
+        output.WriteLine("layout  : " + replay.Layout.FingerprintText);
+        output.WriteLine("frames  : " + replay.StartFrame + ".." + replay.EndFrame + " (" + replay.FrameCount + " recorded, "
+            + replay.InputBytesPerFrame + " input bytes each)");
+        output.WriteLine("keyframes: " + string.Join(", ", replay.Checkpoints.Select(c => c.Frame.ToString(CultureInfo.InvariantCulture))));
+        foreach (KeyValuePair<string, string> pair in replay.Metadata.OrderBy(p => p.Key, StringComparer.Ordinal))
+            output.WriteLine("  " + pair.Key + " = " + pair.Value);
+
+        if (frame is null)
+            return Ok;
+
+        if (!replay.TryGetCheckpoint(frame.Value, out ReplayCheckpoint keyframe))
+        {
+            output.WriteLine("error: frame " + frame.Value + " is not a keyframe (the CLI cannot simulate; pick one listed above)");
+            return Error;
+        }
+
+        output.WriteLine();
+        output.WriteLine("keyframe " + keyframe.Frame + "  checksum " + keyframe.Checksum.ToString("x16", CultureInfo.InvariantCulture));
+        int width = replay.Layout.Fields.Max(f => f.Path.Length);
+        foreach (LayoutField f in replay.Layout.Fields)
+            output.WriteLine("  " + f.Path.PadRight(width) + "  " + f.Format(keyframe.Snapshot));
+        return Ok;
+    }
+
     private static string Hex(byte[] bytes)
     {
         if (bytes.Length == 0) return "-";
@@ -145,6 +185,7 @@ internal static class CliApp
         output.WriteLine("usage:");
         output.WriteLine("  rewindable diff <left.rwdump> <right.rwdump> [--follow N]   compare two machines' dumps");
         output.WriteLine("  rewindable show <dump.rwdump> [--frame N]                  list frames, or every field of one frame");
+        output.WriteLine("  rewindable show <match.rwreplay> [--frame N]               replay summary, or every field of a keyframe");
         output.WriteLine("exit codes: 0 ok / no divergence, 1 diverged, 2 error");
         return code;
     }
