@@ -23,7 +23,7 @@ dotnet add package Rewindable
 **Unity** (`Packages/manifest.json`):
 
 ```json
-"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.6.0"
+"com.aqua0801.rewindable": "https://github.com/aqua0801/Rewindable.git?path=/unity/com.aqua0801.rewindable#v0.6.1"
 ```
 
 Then add `Rewindable` to the `references` of every asmdef that declares or uses `[RollbackState]` types. See

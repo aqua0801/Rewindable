@@ -150,7 +150,7 @@ internal static class CliApp
         output.WriteLine("layout  : " + replay.Layout.FingerprintText);
         output.WriteLine("frames  : " + replay.StartFrame + ".." + replay.EndFrame + " (" + replay.FrameCount + " recorded, "
             + replay.InputBytesPerFrame + " input bytes each)");
-        output.WriteLine("keyframes: " + string.Join(", ", replay.Checkpoints.Select(c => c.Frame.ToString(CultureInfo.InvariantCulture))));
+        output.WriteLine("keyframes: " + replay.Checkpoints.Count + " (" + DescribeFrames(replay.Checkpoints.Select(c => c.Frame).ToList()) + ")");
         foreach (KeyValuePair<string, string> pair in replay.Metadata.OrderBy(p => p.Key, StringComparer.Ordinal))
             output.WriteLine("  " + pair.Key + " = " + pair.Value);
 
@@ -169,6 +169,34 @@ internal static class CliApp
         foreach (LayoutField f in replay.Layout.Fields)
             output.WriteLine("  " + f.Path.PadRight(width) + "  " + f.Format(keyframe.Snapshot));
         return Ok;
+    }
+
+    /// <summary>
+    /// Ascending frame numbers, with every run of three or more evenly spaced ones folded:
+    /// "0..6300 every 60, 6339".
+    /// </summary>
+    public static string DescribeFrames(IReadOnlyList<int> frames)
+    {
+        var parts = new List<string>();
+        int i = 0;
+        while (i < frames.Count)
+        {
+            int step = i + 1 < frames.Count ? frames[i + 1] - frames[i] : 0;
+            int j = i + 1;
+            while (j + 1 < frames.Count && frames[j + 1] - frames[j] == step) j++;
+            if (j - i >= 2)
+            {
+                parts.Add(frames[i].ToString(CultureInfo.InvariantCulture) + ".." + frames[j].ToString(CultureInfo.InvariantCulture)
+                    + " every " + step.ToString(CultureInfo.InvariantCulture));
+                i = j + 1;
+            }
+            else
+            {
+                parts.Add(frames[i].ToString(CultureInfo.InvariantCulture));
+                i++;
+            }
+        }
+        return string.Join(", ", parts);
     }
 
     private static string Hex(byte[] bytes)

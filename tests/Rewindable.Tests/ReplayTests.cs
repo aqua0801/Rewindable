@@ -190,7 +190,7 @@ public class ReplayTests
 
         var summary = new StringWriter();
         Assert.Equal(CliApp.Ok, CliApp.Run(new[] { "show", path }, summary));
-        Assert.Contains("keyframes: 0, 60, 120, 130", summary.ToString());
+        Assert.Contains("keyframes: 4 (0..120 every 60, 130)", summary.ToString());
         Assert.Contains("p1 = Ryu", summary.ToString());
 
         var keyframe = new StringWriter();
@@ -198,5 +198,16 @@ public class ReplayTests
         Assert.Contains("P2.Hp", keyframe.ToString());
 
         Assert.Equal(CliApp.Error, CliApp.Run(new[] { "show", path, "--frame", "61" }, new StringWriter()));
+    }
+
+    [Theory]
+    [InlineData(new int[0], "")]
+    [InlineData(new[] { 5 }, "5")]
+    [InlineData(new[] { 0, 60 }, "0, 60")]
+    [InlineData(new[] { 0, 60, 120, 180, 200, 210, 500 }, "0..180 every 60, 200, 210, 500")]
+    [InlineData(new[] { 0, 60, 120, 6339, 7000, 7100, 7200 }, "0..120 every 60, 6339, 7000..7200 every 100")]
+    public void Cli_FoldsEvenlySpacedFrames(int[] frames, string expected)
+    {
+        Assert.Equal(expected, CliApp.DescribeFrames(frames));
     }
 }

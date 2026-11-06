@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.1]
+
+- `rewindable show` folds evenly spaced keyframes of a replay: `keyframes: 107 (0..6300 every 60, 6339)`.
+
 ## [0.6.0]
 
 - Replays: `ReplayRecorder<T>` records a start state, every frame's inputs and periodic keyframes into a `.rwreplay`
